@@ -4,7 +4,7 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.5.1"
+    static let current = "1.5.2"
 }
 
 // MARK: – Semantic system colours
@@ -31,7 +31,8 @@ extension Color {
 
     // Semantic status colours
     static let clauxGreen  = Color(nsColor: .systemGreen)
-    static let clauxYellow = Color(nsColor: .systemYellow)
+    // Darker amber-yellow — more visible than systemYellow on blurred/vibrancy backgrounds.
+    static let clauxYellow = Color(red: 0.82, green: 0.58, blue: 0.02)
     static let clauxRed    = Color(nsColor: .systemRed)
 
     // Model badges

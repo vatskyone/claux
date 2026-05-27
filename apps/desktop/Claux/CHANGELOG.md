@@ -2,6 +2,13 @@
 
 ---
 
+## [1.5.2] — 2026-05-27
+
+### Improvements
+- **Darker warning yellow** (`Design.swift`) — `clauxYellow` changed from `NSColor.systemYellow` (pale, washed out on vibrancy backgrounds) to a rich amber `rgb(0.82, 0.58, 0.02)`. Affects the context health bar warning state (70–90% fill) and any other UI that references `clauxYellow`.
+
+---
+
 ## [1.5.1] — 2026-05-27
 
 ### Improvements
