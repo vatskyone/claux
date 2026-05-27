@@ -2,6 +2,38 @@
 
 ---
 
+## [0.3.0] — 2026-05-27
+
+### Dashboard — full redesign
+- **Removed** recent sessions list from Dashboard tab; the tab is now focused entirely on the active session
+- **Token breakdown panel** (left column) — visual horizontal bar chart per token type (Input / Output / Cache R / Cache W / Thinking) with exact counts and proportional `█░` bars; summary line shows total tokens + cache-hit % with color-coded grade (green ≥ 60%, yellow ≥ 30%, red below)
+- **Insights panel** (right column) — context-aware recommendations updating live every 5 s:
+  - **Cache efficiency grade A–D** with actionable tip when below 50% ("reuse system prompts" / "add persistent system prompt")
+  - **Context health** with three thresholds: ✓ Healthy (< 75%), ↑ Consider /compact (75–90%), ⚠ Run /compact now! (> 90%)
+  - **Cost projection** — current session cost + burn rate + estimated spend by EOD + rough weekly estimate
+  - **Model indicator** with color (Opus = magenta, Sonnet = blue, Haiku = green)
+  - **Extended thinking %** — shows thinking tokens as % of output when > 0
+  - **Efficiency metric** — K output tokens per dollar (higher is better value)
+  - **Lifetime stats** (shown when no active session): total sessions, lifetime spend, avg cost/session, total output tokens, overall cache-hit %, best cache-hit session
+
+### Analytics — 7-day detail chart + model efficiency
+- **7-day vertical bar chart** (`draw_7day_chart`) replaces old sparkline as primary view:
+  - Header line: total / avg per day / peak day with date
+  - Proportional vertical `█` bars, one column per day; today's column highlighted in blue
+  - Axis separator + day-of-week labels + per-day cost labels
+  - Handles missing days (no data = zero bar)
+- **30-day sparkline** retained as compact secondary trend line below the 7-day chart
+- **By Project / By Model tables** rendered side-by-side to use horizontal space
+- **Model efficiency column** added to the Model table: `K tok/$` = thousands of output tokens per dollar (shows relative value of each model for your workload)
+
+### Internal
+- Added `chrono::{Duration as ChronoDuration, Local}` import to `tui.rs`
+- Added `use std::collections::HashMap` to `tui.rs` for model-output aggregation
+- Extracted `draw_7day_chart`, `draw_30day_sparkline`, `draw_project_table`, `draw_model_table`, `draw_token_breakdown`, `draw_insights_panel` as standalone functions
+- Removed `draw_sessions_list` call from `draw_dashboard` (still used in Sessions tab)
+
+---
+
 ## [0.2.0] — 2026-05-27
 
 ### New Features
