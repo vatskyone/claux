@@ -2,6 +2,13 @@
 
 ---
 
+## [1.5.3] — 2026-05-27
+
+### Improvements
+- **SwiftUI native green & yellow** (`Design.swift`) — `clauxGreen` now uses `Color.green` and `clauxYellow` uses `Color.yellow` (SwiftUI's built-in adaptive palette) instead of custom NSColor/RGB values. Colors now follow the system's dynamic rendering and match the SwiftUI kit consistently.
+
+---
+
 ## [1.5.2] — 2026-05-27
 
 ### Improvements
