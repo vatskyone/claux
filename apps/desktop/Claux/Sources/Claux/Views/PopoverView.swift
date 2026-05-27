@@ -71,7 +71,7 @@ struct PopoverView: View {
             }
         }
         .frame(width: 340)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .nativeBlurBackground(material: .menu)
         // Refresh session data whenever the popover window gains focus
         // (i.e. every time the user clicks the menu bar icon to open it).
         // This ensures the spend totals and session list are never stale.
@@ -133,7 +133,7 @@ struct PopoverView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.clear)
     }
 
     // MARK: – Bottom bar
@@ -171,7 +171,7 @@ struct PopoverView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.clear)
     }
 }
 

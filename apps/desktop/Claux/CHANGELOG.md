@@ -2,6 +2,13 @@
 
 ---
 
+## [1.5.0] — 2026-05-27
+
+### Improvements
+- **Native macOS vibrancy blur backgrounds** (`Design.swift`, `PopoverView.swift`, `SettingsView.swift`, `AnalyticsView.swift`, all card views) — all windows and the menu bar popover now use `NSVisualEffectView` instead of solid `windowBackgroundColor`. The popover uses `.menu` material with `.behindWindow` blending (blurs whatever is behind the panel — same look as Spotlight and Control Centre). Settings and Analytics use `.sidebar` material. Cards inside the popover use `.regularMaterial` (`.withinWindow` blending) so they appear as a frosted-glass panel floating above the main blur layer — the standard macOS layered-glass aesthetic. `WindowBlurInstaller` sets `window.backgroundColor = .clear` and `isOpaque = false` on the host panel via `viewDidMoveToWindow` to let the blur composite against the desktop. `CardStyle` updated from `Color.clauxSurface` to `.regularMaterial`. All inline `controlBackgroundColor` / `windowBackgroundColor` references replaced with `.regularMaterial` / `.thickMaterial` respectively.
+
+---
+
 ## [1.4.1] — 2026-05-27
 
 ### Bug Fixes

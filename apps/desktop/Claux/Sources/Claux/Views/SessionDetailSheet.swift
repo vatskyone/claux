@@ -135,7 +135,7 @@ struct SessionDetailSheet: View {
             .padding(.vertical, 10)
         }
         // Full 340-width to match the popover — the overlay in PopoverView sets the frame
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.thickMaterial)
     }
 
     // MARK: – Sub-views
@@ -161,7 +161,7 @@ struct SessionDetailSheet: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(.regularMaterial)
         .overlay(
             Rectangle()
                 .fill(Color(nsColor: .separatorColor).opacity(0.3))

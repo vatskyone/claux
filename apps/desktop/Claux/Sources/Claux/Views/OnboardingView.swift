@@ -78,7 +78,7 @@ struct OnboardingView: View {
             }
             .padding(.bottom, 24)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.thickMaterial)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -144,7 +144,7 @@ struct OnboardingView: View {
                 .truncationMode(.middle)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7)

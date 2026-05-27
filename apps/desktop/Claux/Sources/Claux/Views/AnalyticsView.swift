@@ -27,7 +27,7 @@ struct AnalyticsView: View {
             .padding(20)
         }
         .frame(width: 540, height: 640)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .nativeBlurBackground(material: .sidebar)
         .navigationTitle("Analytics")
     }
 

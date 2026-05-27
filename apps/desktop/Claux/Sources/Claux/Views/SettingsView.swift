@@ -3,21 +3,25 @@ import AppKit
 import ServiceManagement
 import UserNotifications
 
-// MARK: – Always-on-top helper
-// Reaches into the hosting NSWindow and pins its level to .floating so the
-// settings panel stays above all normal application windows.
-private struct WindowFloater: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+// MARK: – Always-on-top + blur helper
+// Reaches into the hosting NSWindow, pins its level to .floating, and makes it
+// transparent so the NSVisualEffectView blur shows through.
+private final class _FloatingBlurSetupView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let win = window else { return }
         DispatchQueue.main.async {
-            view.window?.level = .floating
-            view.window?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            win.level              = .floating
+            win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            win.backgroundColor    = .clear
+            win.isOpaque           = false
         }
-        return view
     }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { nsView.window?.level = .floating }
-    }
+}
+
+private struct WindowFloater: NSViewRepresentable {
+    func makeNSView(context: Context) -> _FloatingBlurSetupView { _FloatingBlurSetupView() }
+    func updateNSView(_ v: _FloatingBlurSetupView, context: Context) {}
 }
 
 // MARK: – SettingsView
@@ -435,6 +439,7 @@ struct SettingsView: View {
 
         } // end VStack
         .frame(width: 460, height: 620)
+        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
         .background(WindowFloater())
         .onAppear { notifManager.refreshAuthStatus() }
 

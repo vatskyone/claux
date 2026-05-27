@@ -4,7 +4,7 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.4.1"
+    static let current = "1.5.0"
 }
 
 // MARK: – Semantic system colours
@@ -180,17 +180,74 @@ extension View {
     func appThemed() -> some View { modifier(AppThemeModifier()) }
 }
 
+// MARK: – Native blur background (NSVisualEffectView)
+// Wraps NSVisualEffectView so SwiftUI views get the system vibrancy/blur.
+// Use .behindWindow to blur the desktop / other apps behind the panel.
+struct VisualEffectView: NSViewRepresentable {
+    var material:     NSVisualEffectView.Material
+    var blendingMode: NSVisualEffectView.BlendingMode
+
+    init(material:     NSVisualEffectView.Material     = .menu,
+         blendingMode: NSVisualEffectView.BlendingMode = .behindWindow) {
+        self.material     = material
+        self.blendingMode = blendingMode
+    }
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material     = material
+        v.blendingMode = blendingMode
+        v.state        = .active
+        return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {
+        v.material     = material
+        v.blendingMode = blendingMode
+    }
+}
+
+// Makes the host NSPanel / NSWindow transparent so the blur shows through.
+// Uses viewDidMoveToWindow for reliable detection (the window isn't available
+// inside makeNSView).
+final class _TransparentWindowSetupView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let win = window else { return }
+        DispatchQueue.main.async {
+            win.backgroundColor = .clear
+            win.isOpaque        = false
+        }
+    }
+}
+
+struct WindowBlurInstaller: NSViewRepresentable {
+    func makeNSView(context: Context) -> _TransparentWindowSetupView { _TransparentWindowSetupView() }
+    func updateNSView(_ v: _TransparentWindowSetupView, context: Context) {}
+}
+
+extension View {
+    /// Apply native macOS vibrancy blur to this view's host window.
+    /// - `material`: controls the tint/density of the blur (default `.menu` for panels, `.sidebar` for windows).
+    func nativeBlurBackground(material: NSVisualEffectView.Material = .menu) -> some View {
+        self
+            .background(VisualEffectView(material: material, blendingMode: .behindWindow))
+            .overlay(WindowBlurInstaller().frame(width: 0, height: 0), alignment: .topLeading)
+    }
+}
+
 // MARK: – Card style
-// Matches macOS menu section surfaces: subtle background, thin separator-coloured border.
+// On a blurred background, cards use .regularMaterial (.withinWindow blending) so they
+// appear as a slightly frosted panel floating above the main blur — the standard macOS
+// layered-glass look seen in Spotlight, Control Centre, etc.
 struct CardStyle: ViewModifier {
     var borderColor: Color = .clauxBorder
     func body(content: Content) -> some View {
         content
-            .background(Color.clauxSurface)
+            .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(borderColor.opacity(0.4), lineWidth: 0.5)
+                    .stroke(borderColor.opacity(0.35), lineWidth: 0.5)
             )
     }
 }
