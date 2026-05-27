@@ -7,7 +7,8 @@ mod render;
 mod spend;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 
 use monitor::{load_sessions, SessionCache};
 
@@ -61,11 +62,25 @@ enum Commands {
 
     /// Launch the live TUI dashboard (press q to quit, r to refresh).
     Tui,
+
+    /// Print shell completion script (zsh, bash, fish).
+    ///
+    /// Usage: claux completions zsh >> ~/.zshrc
+    Completions {
+        shell: Shell,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let command = cli.command.unwrap_or(Commands::Status { json: false });
+
+    // Shell completions — just print and exit.
+    if let Commands::Completions { shell } = &command {
+        let mut cmd = Cli::command();
+        generate(*shell, &mut cmd, "claux", &mut std::io::stdout());
+        return Ok(());
+    }
 
     // The TUI manages its own session loading loop.
     if let Commands::Tui = &command {
@@ -89,7 +104,7 @@ fn main() -> Result<()> {
         Commands::Analytics { days, json } => {
             commands::analytics::run(&sessions, days, json)?;
         }
-        Commands::Tui => unreachable!(),
+        Commands::Tui | Commands::Completions { .. } => unreachable!(),
     }
 
     Ok(())
