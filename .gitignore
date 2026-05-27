@@ -1,0 +1,36 @@
+# Built app bundles (binary output — rebuilt by build_app.sh)
+*.app/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+*.lproj
+
+# Xcode / Swift
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+DerivedData/
+.build/
+.swiftpm/
+*.o
+*.d
+
+# VS Code
+.vscode/
+
+# Screenshots / temp assets
+Screenshot*.jpg
+Screenshot*.png
+
+# Node / JS (packages/ dir)
+node_modules/
+dist/
+.next/
+*.local
+
+# Misc
+*.log
