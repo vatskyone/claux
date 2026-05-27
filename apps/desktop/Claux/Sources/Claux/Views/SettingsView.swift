@@ -95,65 +95,45 @@ struct SettingsView: View {
                 Toggle("Show model badge in menu bar", isOn: $showModelInMenuBar)
                     .help("Show the current model (e.g. Sonnet 4.6) next to the menu bar icon during an active session")
 
-                LabeledContent("Session retention") {
-                    Picker("", selection: $retentionDays) {
-                        Text("7 days").tag(7)
-                        Text("14 days").tag(14)
-                        Text("30 days").tag(30)
-                        Text("60 days").tag(60)
-                        Text("90 days").tag(90)
-                        Text("1 year").tag(365)
-                    }
-                    .labelsHidden()
-                    .frame(width: 100)
+                Picker("Session retention", selection: $retentionDays) {
+                    Text("7 days").tag(7)
+                    Text("14 days").tag(14)
+                    Text("30 days").tag(30)
+                    Text("60 days").tag(60)
+                    Text("90 days").tag(90)
+                    Text("1 year").tag(365)
                 }
 
-                LabeledContent("Auto-refresh") {
-                    Picker("", selection: $refreshInterval) {
-                        Text("5 s").tag(5)
-                        Text("10 s").tag(10)
-                        Text("30 s").tag(30)
-                        Text("60 s").tag(60)
-                    }
-                    .labelsHidden()
-                    .frame(width: 80)
+                Picker("Auto-refresh", selection: $refreshInterval) {
+                    Text("5 s").tag(5)
+                    Text("10 s").tag(10)
+                    Text("30 s").tag(30)
+                    Text("60 s").tag(60)
                 }
                 .help("How often Claux re-scans Claude's session files")
 
-                LabeledContent("Cost projection") {
-                    Picker("", selection: $projPeriod) {
-                        Text("Daily").tag("daily")
-                        Text("Weekly").tag("weekly")
-                        Text("Monthly").tag("monthly")
-                    }
-                    .labelsHidden()
-                    .frame(width: 100)
+                Picker("Cost projection", selection: $projPeriod) {
+                    Text("Daily").tag("daily")
+                    Text("Weekly").tag("weekly")
+                    Text("Monthly").tag("monthly")
                 }
-                .help("Time period for the projected spend shown in the active session card (e.g. $4.20/d, /w, or /m)")
+                .help("Time period for the projected spend shown in the active session card")
 
-                LabeledContent("Monthly budget") {
-                    Picker("", selection: $monthlyBudget) {
-                        Text("Off").tag(0.0)
-                        Text("$25").tag(25.0)
-                        Text("$50").tag(50.0)
-                        Text("$100").tag(100.0)
-                        Text("$200").tag(200.0)
-                        Text("$500").tag(500.0)
-                        Text("$1 000").tag(1000.0)
-                    }
-                    .labelsHidden()
-                    .frame(width: 100)
+                Picker("Monthly budget", selection: $monthlyBudget) {
+                    Text("Off").tag(0.0)
+                    Text("$25").tag(25.0)
+                    Text("$50").tag(50.0)
+                    Text("$100").tag(100.0)
+                    Text("$200").tag(200.0)
+                    Text("$500").tag(500.0)
+                    Text("$1 000").tag(1000.0)
                 }
                 .help("Monthly spend cap. A progress bar appears in the popover once any spending is recorded.")
 
-                LabeledContent("Appearance") {
-                    Picker("", selection: $appTheme) {
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
-                        Text("Auto").tag("auto")
-                    }
-                    .labelsHidden()
-                    .frame(width: 100)
+                Picker("Appearance", selection: $appTheme) {
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                    Text("Auto").tag("auto")
                 }
                 .help("Choose Light, Dark, or Auto (follows macOS system appearance)")
 
@@ -194,22 +174,19 @@ struct SettingsView: View {
                             EmptyView()
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
 
                 Toggle("Enable notifications", isOn: $notificationsOn)
 
-                LabeledContent("Cost alert") {
-                    Picker("", selection: $costThreshold) {
-                        Text("$0.50").tag(0.5)
-                        Text("$1").tag(1.0)
-                        Text("$2").tag(2.0)
-                        Text("$5").tag(5.0)
-                        Text("$10").tag(10.0)
-                        Text("$20").tag(20.0)
-                        Text("$50").tag(50.0)
-                    }
-                    .labelsHidden()
-                    .frame(width: 80)
+                Picker("Cost alert", selection: $costThreshold) {
+                    Text("$0.50").tag(0.5)
+                    Text("$1").tag(1.0)
+                    Text("$2").tag(2.0)
+                    Text("$5").tag(5.0)
+                    Text("$10").tag(10.0)
+                    Text("$20").tag(20.0)
+                    Text("$50").tag(50.0)
                 }
                 .help("Notify when a session exceeds this cost")
                 .disabled(!notificationsOn)
@@ -223,6 +200,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 36, alignment: .trailing)
                     }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .help("Warn when the context window exceeds this percentage")
                 .disabled(!notificationsOn)
@@ -235,15 +213,11 @@ struct SettingsView: View {
                     .help("Send a daily summary notification with today's total spend")
 
                 if dailySummaryEnabled {
-                    LabeledContent("Send at") {
-                        Picker("", selection: $dailySummaryHour) {
-                            Text("12:00 pm").tag(12)
-                            Text("3:00 pm").tag(15)
-                            Text("6:00 pm").tag(18)
-                            Text("9:00 pm").tag(21)
-                        }
-                        .labelsHidden()
-                        .frame(width: 100)
+                    Picker("Send at", selection: $dailySummaryHour) {
+                        Text("12:00 pm").tag(12)
+                        Text("3:00 pm").tag(15)
+                        Text("6:00 pm").tag(18)
+                        Text("9:00 pm").tag(21)
                     }
                     .disabled(!notificationsOn)
                 }
@@ -252,15 +226,11 @@ struct SettingsView: View {
                     .disabled(!notificationsOn)
                     .help("Show a warning in the active session card when CLAUDE.md quality is below the threshold")
 
-                LabeledContent("Quality threshold") {
-                    Picker("", selection: $claudemdThreshold) {
-                        Text("30").tag(30)
-                        Text("50").tag(50)
-                        Text("70").tag(70)
-                        Text("85").tag(85)
-                    }
-                    .labelsHidden()
-                    .frame(width: 70)
+                Picker("Quality threshold", selection: $claudemdThreshold) {
+                    Text("30").tag(30)
+                    Text("50").tag(50)
+                    Text("70").tag(70)
+                    Text("85").tag(85)
                 }
                 .help("Warn when the CLAUDE.md quality score drops below this value (0–100)")
                 .disabled(!notificationsOn || !claudemdAlertEnabled)
@@ -422,6 +392,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)  // let the VisualEffectView blur show through
         .frame(width: 460, height: 582)
 
         Divider()
@@ -432,6 +403,7 @@ struct SettingsView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Color.clauxAccent)
                 .underline()
+                .frame(maxWidth: .infinity, alignment: .center)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)

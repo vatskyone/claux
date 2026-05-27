@@ -2,6 +2,15 @@
 
 ---
 
+## [1.5.1] — 2026-05-27
+
+### Improvements
+- **Settings blur now visible** (`SettingsView.swift`) — added `.scrollContentBackground(.hidden)` to the Form so SwiftUI's grouped-form scroll background no longer paints over the `NSVisualEffectView` blur; the blurred desktop now shows through behind the settings content.
+- **Settings controls right-aligned** (`SettingsView.swift`) — all Picker rows converted from `LabeledContent { Picker(...).labelsHidden().frame(width:) }` to bare `Picker("label", selection:)` inside the Form. SwiftUI's grouped Form places bare Pickers the same way as Toggles — label on the left, popup button flush with the right edge — so all controls are now consistently aligned. The `System permission` and `Context window alert` rows had `.frame(maxWidth: .infinity, alignment: .trailing)` added to their HStack content for the same effect.
+- **Settings footer centered** (`SettingsView.swift`) — "Reset all settings to default" text now has `.frame(maxWidth: .infinity, alignment: .center)` so it is horizontally centered in the footer bar regardless of window width.
+
+---
+
 ## [1.5.0] — 2026-05-27
 
 ### Improvements
