@@ -4,8 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::models::ClaudeSession;
-use crate::parser::parse_session;
+use crate::models::{AgentRun, ClaudeSession};
+use crate::parser::{parse_agents, parse_session};
 
 const ACTIVE_MTIME_THRESHOLD: Duration = Duration::from_secs(90);
 
@@ -19,7 +19,6 @@ pub struct SessionCache {
 impl SessionCache {
     pub fn new() -> Self { Self::default() }
 
-    /// Load (or reload if changed) the session at `path`.
     pub fn get_or_parse(
         &mut self,
         path: &Path,
@@ -29,7 +28,6 @@ impl SessionCache {
     ) -> Option<ClaudeSession> {
         if let Some((cached_mtime, cached_session)) = self.entries.get(path) {
             if *cached_mtime == mtime {
-                // Cache hit: just refresh is_active flag
                 let mut s = cached_session.clone();
                 let id_active = active_ids.contains(&s.id);
                 s.is_active = id_active || is_recent;
@@ -37,7 +35,6 @@ impl SessionCache {
                 return Some(s);
             }
         }
-        // Cache miss or stale — re-parse
         match parse_session(path, active_ids, is_recent) {
             Ok(s) => {
                 self.entries.insert(path.to_path_buf(), (mtime, s.clone()));
@@ -50,7 +47,6 @@ impl SessionCache {
         }
     }
 
-    /// Remove stale entries for files no longer on disk.
     pub fn evict(&mut self, seen: &HashSet<PathBuf>) {
         self.entries.retain(|k, _| seen.contains(k));
     }
@@ -58,7 +54,6 @@ impl SessionCache {
 
 // ── Active session IDs ────────────────────────────────────────────────────────
 
-/// Read `~/.claude/sessions/<x>.json` files and collect the `sessionId` fields.
 pub fn load_active_ids() -> HashSet<String> {
     let mut ids = HashSet::new();
     let dir = match dirs::home_dir() {
@@ -80,7 +75,6 @@ pub fn load_active_ids() -> HashSet<String> {
 
 // ── JSONL file discovery ──────────────────────────────────────────────────────
 
-/// Find all `*.jsonl` files under `~/.claude/projects/`.
 pub fn find_jsonl_files() -> Vec<PathBuf> {
     let root = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("projects"),
@@ -91,11 +85,20 @@ pub fn find_jsonl_files() -> Vec<PathBuf> {
     files
 }
 
+/// Recursively collect `*.jsonl` files, skipping Claude's companion directories
+/// (`subagents/`, `tool-results/`, `memory/`) so sub-agent files are not treated
+/// as sessions.
 fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            let name = entry.file_name();
+            let n    = name.to_string_lossy();
+            // Skip Claude's companion data directories
+            if n == "subagents" || n == "tool-results" || n == "memory" {
+                continue;
+            }
             collect_jsonl(&path, out);
         } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
             out.push(path);
@@ -105,21 +108,18 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
 
 // ── Load all sessions ─────────────────────────────────────────────────────────
 
-/// Scan disk, parse or cache-hit sessions, and return them sorted
-/// (active first, then by start_time descending).
 pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
     let active_ids = load_active_ids();
     let files      = find_jsonl_files();
     let now        = SystemTime::now();
 
-    let mut seen = HashSet::new();
+    let mut seen     = HashSet::new();
     let mut sessions = Vec::new();
 
     for path in &files {
-        let Ok(meta) = fs::metadata(path) else { continue };
-        let Ok(mtime) = meta.modified() else { continue };
+        let Ok(meta)  = fs::metadata(path) else { continue };
+        let Ok(mtime) = meta.modified()    else { continue };
 
-        // Is the file "recently modified" (active fallback)?
         let is_recent = now.duration_since(mtime)
             .map(|d| d < ACTIVE_MTIME_THRESHOLD)
             .unwrap_or(false);
@@ -138,4 +138,24 @@ pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
     });
 
     sessions
+}
+
+// ── Agent helpers ─────────────────────────────────────────────────────────────
+
+/// Return all agent runs recorded in the given session's JSONL file.
+pub fn load_agents_for_session(session: &ClaudeSession) -> Vec<AgentRun> {
+    if session.jsonl_path.as_os_str().is_empty() { return vec![]; }
+    parse_agents(&session.jsonl_path)
+}
+
+/// Count how many completed tasks each agent type has across ALL sessions.
+/// Used to compute the global XP / level for each type.
+pub fn compute_agent_type_counts(sessions: &[ClaudeSession]) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for session in sessions {
+        for agent in load_agents_for_session(session) {
+            *counts.entry(agent.subagent_type.clone()).or_insert(0) += 1;
+        }
+    }
+    counts
 }

@@ -18,8 +18,10 @@ use std::io;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crate::models::ClaudeSession;
-use crate::monitor::{load_sessions, SessionCache};
+use crate::models::{AgentRun, ClaudeSession, agent_level};
+use crate::monitor::{
+    compute_agent_type_counts, load_agents_for_session, load_sessions, SessionCache,
+};
 use crate::spend::{
     compute_daily_spend, compute_model_breakdown, compute_project_breakdown, compute_spend,
 };
@@ -34,6 +36,7 @@ enum Tab {
     Dashboard = 0,
     Sessions  = 1,
     Analytics = 2,
+    Agents    = 3,
 }
 
 impl Tab {
@@ -41,14 +44,16 @@ impl Tab {
         match self {
             Tab::Dashboard => Tab::Sessions,
             Tab::Sessions  => Tab::Analytics,
-            Tab::Analytics => Tab::Dashboard,
+            Tab::Analytics => Tab::Agents,
+            Tab::Agents    => Tab::Dashboard,
         }
     }
     fn prev(self) -> Tab {
         match self {
-            Tab::Dashboard => Tab::Analytics,
+            Tab::Dashboard => Tab::Agents,
             Tab::Sessions  => Tab::Dashboard,
             Tab::Analytics => Tab::Sessions,
+            Tab::Agents    => Tab::Analytics,
         }
     }
     fn label(self) -> &'static str {
@@ -56,6 +61,7 @@ impl Tab {
             Tab::Dashboard => "Dashboard",
             Tab::Sessions  => "Sessions",
             Tab::Analytics => "Analytics",
+            Tab::Agents    => "Agents",
         }
     }
 }
@@ -63,26 +69,39 @@ impl Tab {
 // ── App state ─────────────────────────────────────────────────────────────────
 
 struct App {
-    tab:              Tab,
-    session_cursor:   usize,
-    session_scroll:   usize,
-    analytics_scroll: usize,
-    detail_open:      Option<usize>,
-    sessions:         Vec<ClaudeSession>,
-    cache:            SessionCache,
-    last_refresh:     Instant,
+    tab:               Tab,
+    // Sessions tab
+    session_cursor:    usize,
+    session_scroll:    usize,
+    // Analytics tab
+    analytics_scroll:  usize,
+    // Session detail overlay
+    detail_open:       Option<usize>,
+    // Agents tab
+    agents:            Vec<AgentRun>,
+    agent_cursor:      usize,
+    agent_type_counts: HashMap<String, usize>,
+    agent_counts_dirty: bool,
+    // Shared data
+    sessions:          Vec<ClaudeSession>,
+    cache:             SessionCache,
+    last_refresh:      Instant,
 }
 
 impl App {
     fn new() -> Self {
-        let mut cache    = SessionCache::new();
-        let sessions     = load_sessions(&mut cache);
+        let mut cache   = SessionCache::new();
+        let sessions    = load_sessions(&mut cache);
         Self {
-            tab: Tab::Dashboard,
-            session_cursor:   0,
-            session_scroll:   0,
-            analytics_scroll: 0,
-            detail_open:      None,
+            tab:               Tab::Dashboard,
+            session_cursor:    0,
+            session_scroll:    0,
+            analytics_scroll:  0,
+            detail_open:       None,
+            agents:            vec![],
+            agent_cursor:      0,
+            agent_type_counts: HashMap::new(),
+            agent_counts_dirty: true,
             sessions,
             cache,
             last_refresh: Instant::now(),
@@ -94,7 +113,25 @@ impl App {
         if self.session_cursor >= self.sessions.len() && !self.sessions.is_empty() {
             self.session_cursor = self.sessions.len() - 1;
         }
+        if self.tab == Tab::Agents {
+            self.reload_agents();
+        }
         self.last_refresh = Instant::now();
+    }
+
+    fn reload_agents(&mut self) {
+        if let Some(active) = self.sessions.iter().find(|s| s.is_active) {
+            self.agents = load_agents_for_session(active);
+        } else {
+            self.agents.clear();
+        }
+        if self.agent_cursor >= self.agents.len() && !self.agents.is_empty() {
+            self.agent_cursor = self.agents.len() - 1;
+        }
+        if self.agent_counts_dirty {
+            self.agent_type_counts = compute_agent_type_counts(&self.sessions);
+            self.agent_counts_dirty = false;
+        }
     }
 }
 
@@ -174,10 +211,12 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
         (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
             app.tab = app.tab.next();
             app.analytics_scroll = 0;
+            if app.tab == Tab::Agents { app.reload_agents(); }
         }
         (KeyCode::Left, _) | (KeyCode::Char('h'), _) => {
             app.tab = app.tab.prev();
             app.analytics_scroll = 0;
+            if app.tab == Tab::Agents { app.reload_agents(); }
         }
 
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
@@ -192,6 +231,9 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                 }
                 Tab::Analytics => {
                     if app.analytics_scroll > 0 { app.analytics_scroll -= 1; }
+                }
+                Tab::Agents => {
+                    if app.agent_cursor > 0 { app.agent_cursor -= 1; }
                 }
                 Tab::Dashboard => {}
             }
@@ -209,6 +251,10 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                     }
                 }
                 Tab::Analytics => { app.analytics_scroll += 1; }
+                Tab::Agents => {
+                    let max = app.agents.len().saturating_sub(1);
+                    if app.agent_cursor < max { app.agent_cursor += 1; }
+                }
                 Tab::Dashboard => {}
             }
         }
@@ -244,6 +290,7 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Dashboard => draw_dashboard(f, chunks[1], app),
         Tab::Sessions  => draw_sessions_screen(f, chunks[1], app),
         Tab::Analytics => draw_analytics_screen(f, chunks[1], app),
+        Tab::Agents    => draw_agents_screen(f, chunks[1], app),
     }
 
     draw_footer(f, chunks[2], app);
@@ -258,16 +305,17 @@ fn draw(f: &mut Frame, app: &App) {
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 fn draw_tab_bar(f: &mut Frame, area: Rect, app: &App) {
-    let has_active = app.sessions.iter().any(|s| s.is_active);
+    let has_active        = app.sessions.iter().any(|s| s.is_active);
+    let has_running_agent = app.agents.iter().any(|a| !a.completed);
 
     let mut spans = vec![Span::styled("  CLAUX  ", Style::default().fg(Color::DarkGray))];
 
-    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics] {
+    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics, Tab::Agents] {
         let is_selected = app.tab == tab;
-        let label = if tab == Tab::Dashboard && has_active {
-            format!("  ● {}  ", tab.label())
-        } else {
-            format!("  {}  ", tab.label())
+        let label = match tab {
+            Tab::Dashboard if has_active        => format!("  ● {}  ", tab.label()),
+            Tab::Agents    if has_running_agent  => format!("  ● {}  ", tab.label()),
+            _                                    => format!("  {}  ", tab.label()),
         };
         let style = if is_selected {
             Style::default()
@@ -280,9 +328,9 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled(label, style));
     }
 
-    let used: usize    = spans.iter().map(|s| s.content.len()).sum();
-    let version        = format!("  v{}  ", env!("CARGO_PKG_VERSION"));
-    let pad            = (area.width as usize).saturating_sub(used + version.len());
+    let used: usize = spans.iter().map(|s| s.content.len()).sum();
+    let version     = format!("  v{}  ", env!("CARGO_PKG_VERSION"));
+    let pad         = (area.width as usize).saturating_sub(used + version.len());
     spans.push(Span::styled(" ".repeat(pad), Style::default()));
     spans.push(Span::styled(version, Style::default().fg(Color::DarkGray)));
 
@@ -293,20 +341,6 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, app: &App) {
 }
 
 // ── Dashboard screen ──────────────────────────────────────────────────────────
-//
-//  ┌─ Active Session ──────────────────────────────┐
-//  │  ● ~/project  ·  Sonnet 4.6  ·  2h 14m       │  (7 or 4 rows)
-//  │  $2.34  ·  $0.89/hr  ·  Context 67%  ·  Cache │
-//  │  [═══════════════════════════════╌╌╌╌╌╌╌╌] 67%│
-//  └───────────────────────────────────────────────┘
-//  ┌─ Tokens ──────────────┐  ┌─ Insights ─────────┐
-//  │  Input    1.2M  ████  │  │  Cache 42%  C Fair  │  (min 6 rows)
-//  │  Output  345K   ███   │  │  Context 67%  ✓     │
-//  │  Cache R  789K  ████  │  │  Est. today  $4.20  │
-//  └───────────────────────┘  └────────────────────┘
-//  ┌─ Spend ───────────────────────────────────────┐
-//  │    Today $2.34  ↑  │  Week $12.56  ↓  │ Month │  (5 rows)
-//  └───────────────────────────────────────────────┘
 
 fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
     let active   = app.sessions.iter().find(|s| s.is_active);
@@ -343,28 +377,12 @@ fn draw_sessions_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 // ── Analytics screen ──────────────────────────────────────────────────────────
-//
-//  ┌─ Last 7 Days ─────────────────────────────────────────────────────────────┐
-//  │  Total $X  Avg $Y/day  Peak $Z (Mon)                                      │
-//  │                                                                            │
-//  │        ██                                                                  │
-//  │   ██   ██        ██                                                        │
-//  │   ██   ██   ██   ██   ██   ██   ██                                         │
-//  │  ─────────────────────────────────                                         │
-//  │   Mon  Tue  Wed  Thu  Fri  Sat  Sun                                        │
-//  │  $0.45 $1.23 ...                                                           │
-//  └────────────────────────────────────────────────────────────────────────────┘
-//  ┌─ 30-Day Trend ──────────────────────────────────────────────────────────── ┐
-//  └────────────────────────────────────────────────────────────────────────────┘
-//  ┌─ By Project ────────────────────┐  ┌─ By Model ─────────────────────────── ┐
-//  └─────────────────────────────────┘  └────────────────────────────────────── ┘
 
 fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
     let daily    = compute_daily_spend(&app.sessions);
     let projects = compute_project_breakdown(&app.sessions);
     let models   = compute_model_breakdown(&app.sessions);
 
-    // Model output-token map for efficiency calculation
     let mut model_output: HashMap<String, u64> = HashMap::new();
     for s in &app.sessions {
         *model_output.entry(s.model.clone()).or_insert(0) += s.token_usage.output_tokens;
@@ -389,7 +407,6 @@ fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
     draw_7day_chart(f, chunks[0], &daily);
     draw_30day_sparkline(f, chunks[1], &daily);
 
-    // Project | Model side by side
     let bottom_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
@@ -399,12 +416,357 @@ fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
     draw_model_table(f, bottom_cols[1], &models, &model_output);
 }
 
+// ── Agents screen ─────────────────────────────────────────────────────────────
+//
+//  ┌─ Agents ── 3 spawned · 2 done · 1 running · $0.23 ──────────────────────┐
+//  │  ●  Type          Lv  XP bar           Task               ★    Cost  Dur │
+//  │  ●  Explore       3   Lv3 [████████░░] Explore desktop…  ★★★★★ $0.05 1m │
+//  │     Plan          2   Lv2 [██████░░░░] Design TUI nav…   ★★★★☆ $0.04 45s│
+//  └──────────────────────────────────────────────────────────────────────────┘
+//  ┌─ Explore — detail ───────────────────────────────────────────────────────┐
+//  │  Task:   Explore the directory /Users/snow/Desktop/...                   │
+//  │  Status: ✓ Completed  ·  1m 23s  ·  Sonnet 4.6  ·  $0.05               │
+//  │                                                                           │
+//  │  Tokens (% of session):                                                  │
+//  │  Input     12.3K  [████████████░░░░░░░░]  34%                            │
+//  │  Output     4.2K  [█████░░░░░░░░░░░░░░░]  12%                            │
+//  │  Cache R    5.1K  [██████░░░░░░░░░░░░░░]  14%                            │
+//  │                                                                           │
+//  │  Output preview:                                                          │
+//  │  "Found 47 Swift files across 3 directories..."                          │
+//  │                                                                           │
+//  │  Quality: ★★★★★  Rich output, task completed cleanly                    │
+//  └──────────────────────────────────────────────────────────────────────────┘
+
+fn draw_agents_screen(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(38), Constraint::Percentage(62)])
+        .split(area);
+
+    draw_agent_list(f, chunks[0], app);
+    draw_agent_detail(f, chunks[1], app);
+}
+
+fn draw_agent_list(f: &mut Frame, area: Rect, app: &App) {
+    let agents  = &app.agents;
+    let spawned = agents.len();
+    let done    = agents.iter().filter(|a| a.completed).count();
+    let running = spawned - done;
+    let total_cost: f64 = agents.iter().map(|a| a.total_cost).sum();
+
+    let title = if spawned > 0 {
+        format!(
+            " Agents ── {} spawned · {} done · {} running · {} ",
+            spawned, done, running, format::cost(total_cost)
+        )
+    } else {
+        " Agents ".to_string()
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if agents.is_empty() {
+        let active_exists = app.sessions.iter().any(|s| s.is_active);
+        let msg = if active_exists {
+            "  No agents spawned in active session yet"
+        } else {
+            "  ○  No active session — agents appear here when Claude is running"
+        };
+        f.render_widget(
+            Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
+    // Column widths: dot(2) type(14) lv+xp(14) task(Min) stars(6) cost(7) dur(6)
+    let widths = [
+        Constraint::Length(2),
+        Constraint::Length(14),
+        Constraint::Length(14),
+        Constraint::Min(16),
+        Constraint::Length(6),
+        Constraint::Length(7),
+        Constraint::Length(6),
+    ];
+
+    let max_rows = inner.height as usize;
+    let rows: Vec<Row> = agents.iter().enumerate()
+        .take(max_rows)
+        .map(|(idx, agent)| {
+            let is_selected = idx == app.agent_cursor;
+            let row_style   = if is_selected {
+                Style::default().bg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+
+            // Status dot
+            let (dot, dot_color) = if !agent.completed {
+                ("●", Color::Green)
+            } else if agent.quality_score <= 2 {
+                ("✗", Color::Red)
+            } else {
+                ("✓", Color::DarkGray)
+            };
+
+            // Agent type (truncated)
+            let type_str = if agent.subagent_type.len() > 13 {
+                format!("{}…", agent.subagent_type.chars().take(12).collect::<String>())
+            } else {
+                agent.subagent_type.clone()
+            };
+
+            // XP / level
+            let global_count = app.agent_type_counts
+                .get(&agent.subagent_type)
+                .copied()
+                .unwrap_or(0);
+            let (lv, prog) = agent_level(global_count);
+            let xp_str = format!("Lv{} {}", lv, xp_bar(prog, 6));
+
+            // Task description (truncated)
+            let task_max = 20usize;
+            let task_str = if agent.description.len() > task_max {
+                format!("{}…", agent.description.chars().take(task_max - 1).collect::<String>())
+            } else {
+                agent.description.clone()
+            };
+
+            // Duration
+            let dur_str = agent_duration_str(agent);
+
+            Row::new(vec![
+                Cell::from(dot).style(Style::default().fg(dot_color)),
+                Cell::from(type_str),
+                Cell::from(xp_str).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(task_str),
+                Cell::from(stars(agent.quality_score))
+                    .style(quality_style(agent.quality_score)),
+                Cell::from(format::cost(agent.total_cost))
+                    .style(Style::default().fg(Color::White)),
+                Cell::from(dur_str).style(Style::default().fg(Color::DarkGray)),
+            ])
+            .style(row_style)
+        })
+        .collect();
+
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from("Type"),
+                Cell::from("Lv / XP"),
+                Cell::from("Task"),
+                Cell::from("★"),
+                Cell::from("Cost"),
+                Cell::from("Dur"),
+            ])
+            .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        )
+        .column_spacing(1);
+
+    f.render_widget(table, inner);
+}
+
+fn draw_agent_detail(f: &mut Frame, area: Rect, app: &App) {
+    let selected = app.agents.get(app.agent_cursor);
+
+    let title = selected
+        .map(|a| {
+            let t = if a.subagent_type.len() > 20 {
+                format!("{}…", a.subagent_type.chars().take(19).collect::<String>())
+            } else {
+                a.subagent_type.clone()
+            };
+            format!(" {} — detail ", t)
+        })
+        .unwrap_or_else(|| " Detail ".to_string());
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(agent) = selected else {
+        f.render_widget(
+            Paragraph::new("  Select an agent above with ↑/↓")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    };
+
+    // Find active session for token % share computation
+    let session_usage = app.sessions.iter()
+        .find(|s| s.is_active)
+        .map(|s| &s.token_usage);
+
+    let dur_str    = agent_duration_str(agent);
+    let model_str  = agent.model.as_deref().map(format::model_short_name).unwrap_or_else(|| "—".to_string());
+    let model_col  = agent.model.as_deref().map(model_color_for).unwrap_or(Color::DarkGray);
+    let cost_str   = format::cost(agent.total_cost);
+
+    let has_tokens = agent.token_usage.input_tokens > 0
+        || agent.token_usage.output_tokens > 0
+        || agent.token_usage.cache_read_tokens > 0;
+
+    // bar_w: label(9) + count(7) + brackets+bar(bar_w+2) + pct(5) + spaces ≈ inner.width - 26
+    let bar_w = (inner.width as usize).saturating_sub(28).max(4);
+
+    let mut lines: Vec<Line> = vec![];
+
+    // ── Task & prompt ────────────────────────────────────────────────────────
+    let desc = &agent.description;
+    let desc_max = inner.width as usize - 10;
+    let desc_str = if desc.len() > desc_max {
+        format!("{}…", desc.chars().take(desc_max - 1).collect::<String>())
+    } else {
+        desc.clone()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Task    ", Style::default().fg(Color::DarkGray)),
+        Span::styled(desc_str, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]));
+
+    if !agent.prompt.is_empty() {
+        let prompt_max = inner.width as usize - 12;
+        let prompt_preview: String = agent.prompt
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(prompt_max)
+            .collect();
+        let prompt_str = if agent.prompt.len() > prompt_max {
+            format!("{}…", prompt_preview)
+        } else {
+            prompt_preview
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  Prompt  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(prompt_str, Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    // ── Status ───────────────────────────────────────────────────────────────
+    if agent.completed {
+        lines.push(Line::from(vec![
+            Span::styled("  Status  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("✓ Completed", Style::default().fg(Color::Green)),
+            Span::raw("  ·  "),
+            Span::styled(dur_str, Style::default().fg(Color::White)),
+            Span::raw("  ·  "),
+            Span::styled(model_str, Style::default().fg(model_col)),
+            Span::raw("  ·  "),
+            Span::styled(cost_str, Style::default().fg(Color::White)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("  Status  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("● Running…", Style::default().fg(Color::Green)),
+            Span::raw("  "),
+            Span::styled(dur_str, Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    // ── Token breakdown ───────────────────────────────────────────────────────
+    if has_tokens {
+        lines.push(Line::from(Span::styled(
+            "  Tokens (% of session):",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let entries: &[(&str, u64, Color)] = &[
+            ("Input  ", agent.token_usage.input_tokens,      Color::White),
+            ("Output ", agent.token_usage.output_tokens,     Color::Cyan),
+            ("Cache R", agent.token_usage.cache_read_tokens, Color::Blue),
+        ];
+
+        for (label, count, color) in entries {
+            let share = session_usage.map(|su| {
+                let denom = match *label {
+                    "Input  " => su.input_tokens,
+                    "Output " => su.output_tokens,
+                    _         => su.cache_read_tokens,
+                };
+                if denom == 0 { 0.0 } else { (*count as f64 / denom as f64).min(1.0) }
+            }).unwrap_or(0.0);
+
+            let filled = (share * bar_w as f64).round() as usize;
+            let empty  = bar_w.saturating_sub(filled);
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<8}", label), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{:>6} ", format::tokens(*count)), Style::default().fg(*color)),
+                Span::styled("[", Style::default().fg(Color::DarkGray)),
+                Span::styled("█".repeat(filled), Style::default().fg(*color)),
+                Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
+                Span::styled("]", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {:>3.0}%", share * 100.0),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  (token data unavailable — sub-agent file not found)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+
+    // ── Output preview ────────────────────────────────────────────────────────
+    if !agent.output_preview.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  Output preview:",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let line_w = (inner.width as usize).saturating_sub(4).max(10);
+        let preview_lines = wrap_text(&agent.output_preview, line_w, 3);
+        for pl in &preview_lines {
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(pl.clone(), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // ── Quality ───────────────────────────────────────────────────────────────
+    lines.push(Line::from(vec![
+        Span::styled("  Quality ", Style::default().fg(Color::DarkGray)),
+        Span::styled(stars(agent.quality_score), quality_style(agent.quality_score)),
+        Span::raw("  "),
+        Span::styled(
+            quality_label(agent.quality_score),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+
+    let render_h = lines.len().min(inner.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines), Rect { height: render_h, ..inner });
+}
+
 // ── 7-day vertical bar chart ─────────────────────────────────────────────────
 
 fn draw_7day_chart(f: &mut Frame, area: Rect, daily: &[crate::models::DailySpend]) {
     let today = Local::now().date_naive();
-
-    // Build exactly 7 days: [today-6 .. today], filling missing days with $0
     let days: Vec<(chrono::NaiveDate, f64)> = (0i64..7)
         .map(|i| today - ChronoDuration::days(6 - i))
         .map(|date| {
@@ -420,14 +782,12 @@ fn draw_7day_chart(f: &mut Frame, area: Rect, daily: &[crate::models::DailySpend
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if inner.height < 6 || inner.width < 28 {
-        return;
-    }
+    if inner.height < 6 || inner.width < 28 { return; }
 
-    let costs: Vec<f64>  = days.iter().map(|(_, c)| *c).collect();
-    let total: f64       = costs.iter().sum();
-    let max_cost: f64    = costs.iter().cloned().fold(0.0f64, f64::max);
-    let avg              = total / 7.0;
+    let costs: Vec<f64> = days.iter().map(|(_, c)| *c).collect();
+    let total: f64      = costs.iter().sum();
+    let max_cost: f64   = costs.iter().cloned().fold(0.0f64, f64::max);
+    let avg             = total / 7.0;
 
     let peak_str = days.iter()
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
@@ -436,30 +796,18 @@ fn draw_7day_chart(f: &mut Frame, area: Rect, daily: &[crate::models::DailySpend
 
     let summary = format!(
         "  Total {}    Avg {}/day    Peak {}",
-        format::cost(total),
-        format::cost(avg),
-        peak_str,
+        format::cost(total), format::cost(avg), peak_str,
     );
 
-    // Layout within inner:
-    //   row 0      : summary
-    //   row 1      : blank gap
-    //   row 2..(2+bar_rows-1): bars
-    //   row 2+bar_rows       : axis ─────
-    //   row 2+bar_rows+1     : day labels
-    //   row 2+bar_rows+2     : cost labels
-    // Total used = bar_rows + 5
-
     let bar_rows = (inner.height as usize).saturating_sub(5).max(1);
-    let n        = days.len(); // always 7
+    let n        = days.len();
     let col_w    = (inner.width as usize) / n;
     if col_w == 0 { return; }
 
-    let bar_w   = col_w.saturating_sub(2).min(5).max(1);
-    let pad_l   = (col_w.saturating_sub(bar_w)) / 2;
-    let pad_r   = col_w.saturating_sub(pad_l + bar_w);
+    let bar_w = col_w.saturating_sub(2).min(5).max(1);
+    let pad_l = (col_w.saturating_sub(bar_w)) / 2;
+    let pad_r = col_w.saturating_sub(pad_l + bar_w);
 
-    // Fill height for each day
     let fill: Vec<usize> = costs.iter().map(|&c| {
         if max_cost > 0.0 {
             ((c / max_cost) * bar_rows as f64).round() as usize
@@ -467,19 +815,14 @@ fn draw_7day_chart(f: &mut Frame, area: Rect, daily: &[crate::models::DailySpend
     }).collect();
 
     let mut lines: Vec<Line> = vec![];
-
-    // Summary
     lines.push(Line::from(Span::styled(summary, Style::default().fg(Color::DarkGray))));
     lines.push(Line::from(""));
 
-    // Bar rows (row 0 = top → highest values)
     for r in 0..bar_rows {
-        let threshold = bar_rows - r; // fill must be >= threshold to be visible at this height
+        let threshold = bar_rows - r;
         let mut spans: Vec<Span> = vec![];
-
         for (i, &fill_h) in fill.iter().enumerate() {
-            let is_today = days[i].0 == today;
-
+            let is_today  = days[i].0 == today;
             if fill_h >= threshold {
                 let bar_color = if is_today { Color::Blue } else { Color::Cyan };
                 if pad_l > 0 { spans.push(Span::raw(" ".repeat(pad_l))); }
@@ -492,43 +835,29 @@ fn draw_7day_chart(f: &mut Frame, area: Rect, daily: &[crate::models::DailySpend
         lines.push(Line::from(spans));
     }
 
-    // Axis
     lines.push(Line::from(Span::styled(
         "─".repeat(col_w * n),
         Style::default().fg(Color::DarkGray),
     )));
 
-    // Day labels — e.g. "Mon"
     let day_spans: Vec<Span> = days.iter().map(|(d, _)| {
         let is_today = *d == today;
         let lbl = format!("{:^width$}", d.format("%a"), width = col_w);
-        let style = if is_today {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        Span::styled(lbl, style)
+        Span::styled(lbl, Style::default().fg(if is_today { Color::White } else { Color::DarkGray }))
     }).collect();
     lines.push(Line::from(day_spans));
 
-    // Cost labels — e.g. "$1.23"
     let cost_spans: Vec<Span> = days.iter().map(|(d, c)| {
         let is_today = *d == today;
         let lbl = format!("{:^width$}", format::cost(*c), width = col_w);
-        let style = if is_today {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        Span::styled(lbl, style)
+        Span::styled(lbl, Style::default().fg(if is_today { Color::White } else { Color::DarkGray }))
     }).collect();
     lines.push(Line::from(cost_spans));
 
-    let chart_area = Rect {
-        height: (lines.len() as u16).min(inner.height),
-        ..inner
-    };
-    f.render_widget(Paragraph::new(lines), chart_area);
+    f.render_widget(
+        Paragraph::new(lines),
+        Rect { height: (inner.height), ..inner },
+    );
 }
 
 // ── 30-day compact sparkline ─────────────────────────────────────────────────
@@ -556,15 +885,17 @@ fn draw_30day_sparkline(f: &mut Frame, area: Rect, daily: &[crate::models::Daily
         let last  = daily.last().map(|d| d.date.format("%b %d").to_string()).unwrap_or_default();
         let pad   = (inner.width as usize).saturating_sub(first.len() + last.len() + 2);
 
-        let lines = vec![
-            Line::from(Span::styled(bar_line, Style::default().fg(Color::DarkGray))),
-            Line::from(vec![
-                Span::styled(first, Style::default().fg(Color::DarkGray)),
-                Span::raw(" ".repeat(pad.max(1))),
-                Span::styled(last, Style::default().fg(Color::DarkGray)),
+        f.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled(bar_line, Style::default().fg(Color::DarkGray))),
+                Line::from(vec![
+                    Span::styled(first, Style::default().fg(Color::DarkGray)),
+                    Span::raw(" ".repeat(pad.max(1))),
+                    Span::styled(last, Style::default().fg(Color::DarkGray)),
+                ]),
             ]),
-        ];
-        f.render_widget(Paragraph::new(lines), inner);
+            inner,
+        );
     } else {
         f.render_widget(
             Paragraph::new("No spend data.")
@@ -575,7 +906,7 @@ fn draw_30day_sparkline(f: &mut Frame, area: Rect, daily: &[crate::models::Daily
     }
 }
 
-// ── Project breakdown table ───────────────────────────────────────────────────
+// ── Project table ─────────────────────────────────────────────────────────────
 
 fn draw_project_table(
     f: &mut Frame,
@@ -590,8 +921,8 @@ fn draw_project_table(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let max_rows = inner.height as usize;
-    let visible: Vec<&crate::models::ProjectSpend> = projects.iter().skip(scroll).take(max_rows).collect();
+    let visible: Vec<&crate::models::ProjectSpend> =
+        projects.iter().skip(scroll).take(inner.height as usize).collect();
 
     let rows: Vec<Row> = visible.iter().map(|p| {
         let max_path = (inner.width as usize).saturating_sub(22).max(10);
@@ -607,17 +938,18 @@ fn draw_project_table(
         ])
     }).collect();
 
-    let table = Table::new(rows, [Constraint::Min(20), Constraint::Length(5), Constraint::Length(8)])
-        .header(
-            Row::new(["Project", "Sess", "Cost"])
-                .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-        )
-        .column_spacing(1);
-
-    f.render_widget(table, inner);
+    f.render_widget(
+        Table::new(rows, [Constraint::Min(20), Constraint::Length(5), Constraint::Length(8)])
+            .header(
+                Row::new(["Project", "Sess", "Cost"])
+                    .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            )
+            .column_spacing(1),
+        inner,
+    );
 }
 
-// ── Model breakdown table with efficiency ─────────────────────────────────────
+// ── Model table with efficiency ───────────────────────────────────────────────
 
 fn draw_model_table(
     f: &mut Frame,
@@ -635,7 +967,6 @@ fn draw_model_table(
     let rows: Vec<Row> = models.iter().take(inner.height as usize).map(|m| {
         let color      = model_color_for(&m.model);
         let output_tok = model_output.get(&m.model).copied().unwrap_or(0);
-        // K output tokens per dollar — higher is more efficient
         let efficiency = if m.total_cost > 0.0 {
             format!("{:.0}K/$", output_tok as f64 / m.total_cost / 1_000.0)
         } else {
@@ -649,22 +980,23 @@ fn draw_model_table(
         ])
     }).collect();
 
-    let table = Table::new(rows, [
-        Constraint::Min(12),
-        Constraint::Length(5),
-        Constraint::Length(8),
-        Constraint::Length(8),
-    ])
-    .header(
-        Row::new(["Model", "Sess", "Cost", "Effic."])
-            .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-    )
-    .column_spacing(1);
-
-    f.render_widget(table, inner);
+    f.render_widget(
+        Table::new(rows, [
+            Constraint::Min(12),
+            Constraint::Length(5),
+            Constraint::Length(8),
+            Constraint::Length(8),
+        ])
+        .header(
+            Row::new(["Model", "Sess", "Cost", "Effic."])
+                .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        )
+        .column_spacing(1),
+        inner,
+    );
 }
 
-// ── Token breakdown panel ─────────────────────────────────────────────────────
+// ── Token breakdown panel (Dashboard) ────────────────────────────────────────
 
 fn draw_token_breakdown(f: &mut Frame, area: Rect, session: Option<&ClaudeSession>) {
     let block = Block::default()
@@ -676,29 +1008,18 @@ fn draw_token_breakdown(f: &mut Frame, area: Rect, session: Option<&ClaudeSessio
 
     let Some(s) = session else {
         f.render_widget(
-            Paragraph::new("  No active session")
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("  No active session").style(Style::default().fg(Color::DarkGray)),
             inner,
         );
         return;
     };
 
-    let tu = &s.token_usage;
-
-    // label(10) + count(7) + space(1) + bar = inner.width
+    let tu    = &s.token_usage;
     let bar_w = (inner.width as usize).saturating_sub(19).max(2);
     let max_tok = [
-        tu.input_tokens,
-        tu.output_tokens,
-        tu.cache_read_tokens,
-        tu.cache_write_tokens,
-        tu.thinking_tokens,
-    ]
-    .iter()
-    .cloned()
-    .max()
-    .unwrap_or(1)
-    .max(1);
+        tu.input_tokens, tu.output_tokens, tu.cache_read_tokens,
+        tu.cache_write_tokens, tu.thinking_tokens,
+    ].iter().cloned().max().unwrap_or(1).max(1);
 
     let entries: &[(&str, u64, Color)] = &[
         ("Input   ", tu.input_tokens,       Color::White),
@@ -709,11 +1030,8 @@ fn draw_token_breakdown(f: &mut Frame, area: Rect, session: Option<&ClaudeSessio
     ];
 
     let mut lines: Vec<Line> = entries.iter().map(|(label, count, color)| {
-        let filled = if max_tok > 0 {
-            ((*count as f64 / max_tok as f64) * bar_w as f64).round() as usize
-        } else { 0 };
-        let empty = bar_w.saturating_sub(filled);
-
+        let filled = ((*count as f64 / max_tok as f64) * bar_w as f64).round() as usize;
+        let empty  = bar_w.saturating_sub(filled);
         Line::from(vec![
             Span::styled(format!("  {:<9}", label), Style::default().fg(Color::DarkGray)),
             Span::styled(format!("{:>6} ", format::tokens(*count)), Style::default().fg(*color)),
@@ -722,8 +1040,7 @@ fn draw_token_breakdown(f: &mut Frame, area: Rect, session: Option<&ClaudeSessio
         ])
     }).collect();
 
-    // Summary stats
-    let total = tu.input_tokens + tu.output_tokens + tu.cache_read_tokens
+    let total     = tu.input_tokens + tu.output_tokens + tu.cache_read_tokens
         + tu.cache_write_tokens + tu.thinking_tokens;
     let cache_pct = tu.cache_hit_rate() * 100.0;
 
@@ -744,7 +1061,7 @@ fn draw_token_breakdown(f: &mut Frame, area: Rect, session: Option<&ClaudeSessio
     f.render_widget(Paragraph::new(lines), Rect { height: h, ..inner });
 }
 
-// ── Insights panel ────────────────────────────────────────────────────────────
+// ── Insights panel (Dashboard) ────────────────────────────────────────────────
 
 fn draw_insights_panel(
     f: &mut Frame,
@@ -766,7 +1083,6 @@ fn draw_insights_panel(
         let ctx_pct   = s.context_health_fraction() * 100.0;
         let burn      = s.burn_rate_per_hour();
 
-        // ── Cache efficiency ──────────────────────────────────────────────
         let (grade, grade_color, tip) = if cache_pct >= 70.0 {
             ("A  Excellent", Color::Green,  None)
         } else if cache_pct >= 50.0 {
@@ -779,21 +1095,14 @@ fn draw_insights_panel(
 
         lines.push(Line::from(vec![
             Span::styled("  Cache  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("{:.0}%  ", cache_pct),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format!("{:.0}%  ", cache_pct), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled(grade, Style::default().fg(grade_color)),
         ]));
         if let Some(t) = tip {
-            lines.push(Line::from(Span::styled(
-                format!("           {}", t),
-                Style::default().fg(Color::DarkGray),
-            )));
+            lines.push(Line::from(Span::styled(format!("           {}", t), Style::default().fg(Color::DarkGray))));
         }
         lines.push(Line::from(""));
 
-        // ── Context health ────────────────────────────────────────────────
         let (ctx_label, ctx_color) = if ctx_pct >= 90.0 {
             ("⚠  Run /compact now!", Color::Red)
         } else if ctx_pct >= 75.0 {
@@ -804,31 +1113,21 @@ fn draw_insights_panel(
 
         lines.push(Line::from(vec![
             Span::styled("  Context ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("{:.0}%  ", ctx_pct),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format!("{:.0}%  ", ctx_pct), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled(ctx_label, Style::default().fg(ctx_color)),
         ]));
         lines.push(Line::from(""));
 
-        // ── Cost projection ───────────────────────────────────────────────
         if burn > 0.0 {
             let now        = Local::now();
             let hours_left = 24.0 - now.hour() as f64 - now.minute() as f64 / 60.0;
             let projected  = s.total_cost + burn * hours_left;
-            let week_proj  = projected * 5.0; // rough 5 working days
+            let week_proj  = projected * 5.0;
 
             lines.push(Line::from(vec![
                 Span::styled("  Session    ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format::cost(s.total_cost),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!("  @ {}/hr", format::cost(burn)),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format::cost(s.total_cost), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("  @ {}/hr", format::cost(burn)), Style::default().fg(Color::DarkGray)),
             ]));
             lines.push(Line::from(vec![
                 Span::styled("  Est. today ", Style::default().fg(Color::DarkGray)),
@@ -841,75 +1140,51 @@ fn draw_insights_panel(
             lines.push(Line::from(""));
         }
 
-        // ── Model info ────────────────────────────────────────────────────
-        let model       = format::model_short_name(&s.model);
         let model_color = model_color_for(&s.model);
         lines.push(Line::from(vec![
             Span::styled("  Model  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(model, Style::default().fg(model_color).add_modifier(Modifier::BOLD)),
+            Span::styled(format::model_short_name(&s.model), Style::default().fg(model_color).add_modifier(Modifier::BOLD)),
         ]));
 
-        // Thinking tokens %
         if s.token_usage.thinking_tokens > 0 {
             let think_pct = s.token_usage.thinking_tokens as f64
-                / s.token_usage.output_tokens.max(1) as f64
-                * 100.0;
+                / s.token_usage.output_tokens.max(1) as f64 * 100.0;
             lines.push(Line::from(vec![
                 Span::styled("  Extended ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format!("{:.0}% thinking", think_pct),
-                    Style::default().fg(Color::Magenta),
-                ),
+                Span::styled(format!("{:.0}% thinking", think_pct), Style::default().fg(Color::Magenta)),
             ]));
         }
 
-        // Output efficiency (K output tokens per dollar)
         if s.total_cost > 0.0 && s.token_usage.output_tokens > 0 {
             let efficiency = s.token_usage.output_tokens as f64 / s.total_cost / 1_000.0;
             lines.push(Line::from(vec![
                 Span::styled("  Effic.   ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format!("{:.0}K tok/$", efficiency),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("{:.0}K tok/$", efficiency), Style::default().fg(Color::DarkGray)),
             ]));
         }
 
     } else {
-        // ── No active session: lifetime stats ────────────────────────────
         let total_sess     = all.len();
         let lifetime_cost: f64 = all.iter().map(|s| s.total_cost).sum();
         let avg_cost       = if total_sess > 0 { lifetime_cost / total_sess as f64 } else { 0.0 };
-
-        let total_input:   u64 = all.iter().map(|s| s.token_usage.input_tokens).sum();
         let total_output:  u64 = all.iter().map(|s| s.token_usage.output_tokens).sum();
+        let total_input:   u64 = all.iter().map(|s| s.token_usage.input_tokens).sum();
         let total_cache_r: u64 = all.iter().map(|s| s.token_usage.cache_read_tokens).sum();
         let total_cache_w: u64 = all.iter().map(|s| s.token_usage.cache_write_tokens).sum();
-
         let overall_cache = {
-            let denom = total_input + total_cache_r + total_cache_w;
-            if denom > 0 { total_cache_r as f64 / denom as f64 * 100.0 } else { 0.0 }
+            let d = total_input + total_cache_r + total_cache_w;
+            if d > 0 { total_cache_r as f64 / d as f64 * 100.0 } else { 0.0 }
         };
-
-        let best_session = all.iter()
-            .filter(|s| s.token_usage.cache_hit_rate() > 0.0)
-            .max_by(|a, b| a.token_usage.cache_hit_rate().partial_cmp(&b.token_usage.cache_hit_rate()).unwrap());
 
         lines.push(Line::from(Span::styled("  ○  No active session", Style::default().fg(Color::DarkGray))));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("  Sessions    ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                total_sess.to_string(),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(total_sess.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ]));
         lines.push(Line::from(vec![
             Span::styled("  Lifetime    ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format::cost(lifetime_cost),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format::cost(lifetime_cost), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
         ]));
         lines.push(Line::from(vec![
             Span::styled("  Avg/session ", Style::default().fg(Color::DarkGray)),
@@ -930,13 +1205,15 @@ fn draw_insights_panel(
             ),
         ]));
 
-        if let Some(best) = best_session {
+        if let Some(best) = all.iter()
+            .filter(|s| s.token_usage.cache_hit_rate() > 0.0)
+            .max_by(|a, b| a.token_usage.cache_hit_rate().partial_cmp(&b.token_usage.cache_hit_rate()).unwrap())
+        {
             lines.push(Line::from(""));
-            let best_pct = best.token_usage.cache_hit_rate() * 100.0;
             lines.push(Line::from(vec![
                 Span::styled("  Best cache  ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    format!("{:.0}%  {}", best_pct, best.display_path()),
+                    format!("{:.0}%  {}", best.token_usage.cache_hit_rate() * 100.0, best.display_path()),
                     Style::default().fg(Color::Green),
                 ),
             ]));
@@ -959,22 +1236,24 @@ fn draw_active_panel(f: &mut Frame, area: Rect, session: Option<&ClaudeSession>)
 
     match session {
         None => {
-            let p = Paragraph::new("○  No active session")
-                .style(Style::default().fg(Color::DarkGray))
-                .alignment(Alignment::Center);
-            f.render_widget(p, inner);
+            f.render_widget(
+                Paragraph::new("○  No active session")
+                    .style(Style::default().fg(Color::DarkGray))
+                    .alignment(Alignment::Center),
+                inner,
+            );
         }
         Some(s) => {
-            let path    = s.display_path();
-            let model   = format::model_short_name(&s.model);
-            let dur     = format::duration(s.duration_secs());
-            let cost    = format::cost(s.total_cost);
-            let burn    = format!("{}/hr", format::cost(s.burn_rate_per_hour()));
-            let frac    = s.context_health_fraction();
-            let ctx     = format!("{:.0}%", frac * 100.0);
-            let cache   = format!("{:.0}%", s.token_usage.cache_hit_rate() * 100.0);
-            let color   = context_color(frac);
-            let turns   = s.token_usage.output_tokens; // rough proxy for turns
+            let path  = s.display_path();
+            let model = format::model_short_name(&s.model);
+            let dur   = format::duration(s.duration_secs());
+            let cost  = format::cost(s.total_cost);
+            let burn  = format!("{}/hr", format::cost(s.burn_rate_per_hour()));
+            let frac  = s.context_health_fraction();
+            let ctx   = format!("{:.0}%", frac * 100.0);
+            let cache = format!("{:.0}%", s.token_usage.cache_hit_rate() * 100.0);
+            let color = context_color(frac);
+            let turns = s.token_usage.output_tokens;
 
             let rows = vec![
                 Line::from(vec![
@@ -1054,18 +1333,18 @@ fn render_spend_cell(f: &mut Frame, area: Rect, label: &str, current: f64, prev:
         (String::new(), Color::DarkGray)
     };
 
-    let lines = vec![
-        Line::from(Span::styled(label, Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled(
-            format::cost(current),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(trend_str, Style::default().fg(trend_color))),
-    ];
-    f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(label, Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled(format::cost(current), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(trend_str, Style::default().fg(trend_color))),
+        ])
+        .alignment(Alignment::Center),
+        area,
+    );
 }
 
-// ── Session list (shared: Dashboard + Sessions tab) ───────────────────────────
+// ── Session list ──────────────────────────────────────────────────────────────
 
 fn draw_sessions_list(
     f: &mut Frame,
@@ -1091,28 +1370,21 @@ fn draw_sessions_list(
         return;
     }
 
-    let header_h = 1usize;
-    let max_rows = (inner.height as usize).saturating_sub(header_h);
+    let max_rows = (inner.height as usize).saturating_sub(1);
     let visible: Vec<(usize, &ClaudeSession)> = sessions
-        .iter()
-        .enumerate()
-        .skip(scroll)
-        .take(max_rows)
-        .collect();
+        .iter().enumerate().skip(scroll).take(max_rows).collect();
 
     let rows: Vec<Row> = visible.iter().map(|(abs_idx, s)| {
         let is_selected = cursor == Some(*abs_idx);
-        let row_style   = if is_selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
-
-        let dot   = if s.is_active { "●" } else { "○" };
-        let dot_s = Style::default().fg(if s.is_active { Color::Green } else { Color::DarkGray });
-        let when  = format::relative_time(&s.start_time);
-        let dur   = format::duration(s.duration_secs());
-        let model = format::model_short_name(&s.model);
-        let path  = s.display_path();
-        let title = s.title.as_deref().unwrap_or(path.as_str());
-        let label = if title.len() > 38 { format!("{}…", &title[..37]) } else { title.to_string() };
-        let cost  = format::cost(s.total_cost);
+        let dot     = if s.is_active { "●" } else { "○" };
+        let dot_s   = Style::default().fg(if s.is_active { Color::Green } else { Color::DarkGray });
+        let when    = format::relative_time(&s.start_time);
+        let dur     = format::duration(s.duration_secs());
+        let model   = format::model_short_name(&s.model);
+        let path    = s.display_path();
+        let title   = s.title.as_deref().unwrap_or(path.as_str());
+        let label   = if title.len() > 38 { format!("{}…", &title[..37]) } else { title.to_string() };
+        let cost    = format::cost(s.total_cost);
 
         Row::new(vec![
             Cell::from(dot).style(dot_s),
@@ -1122,20 +1394,19 @@ fn draw_sessions_list(
             Cell::from(label),
             Cell::from(cost).style(Style::default().fg(Color::White)),
         ])
-        .style(row_style)
+        .style(if is_selected { Style::default().bg(Color::DarkGray) } else { Style::default() })
     }).collect();
 
-    let widths = [
-        Constraint::Length(2),
-        Constraint::Length(9),
-        Constraint::Length(8),
-        Constraint::Length(12),
-        Constraint::Min(20),
-        Constraint::Length(8),
-    ];
-
     let hint  = if cursor.is_some() { " [Enter] detail" } else { "" };
-    let table = Table::new(rows, widths)
+    f.render_widget(
+        Table::new(rows, [
+            Constraint::Length(2),
+            Constraint::Length(9),
+            Constraint::Length(8),
+            Constraint::Length(12),
+            Constraint::Min(20),
+            Constraint::Length(8),
+        ])
         .header(
             Row::new(vec![
                 Cell::from(""),
@@ -1147,14 +1418,14 @@ fn draw_sessions_list(
             ])
             .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
         )
-        .column_spacing(1);
-
-    f.render_widget(table, inner);
+        .column_spacing(1),
+        inner,
+    );
 
     // Scroll indicator
     if sessions.len() > max_rows && max_rows > 0 {
-        let pct    = scroll as f64 / (sessions.len() - max_rows).max(1) as f64;
-        let thumb  = inner.y + (pct * (inner.height as f64 - 1.0)).round() as u16;
+        let pct   = scroll as f64 / (sessions.len() - max_rows).max(1) as f64;
+        let thumb = inner.y + (pct * (inner.height as f64 - 1.0)).round() as u16;
         if thumb < inner.y + inner.height {
             f.render_widget(
                 Paragraph::new("▐").style(Style::default().fg(Color::DarkGray)),
@@ -1189,17 +1460,10 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
 
     let mut lines: Vec<Line> = vec![
         Line::from(vec![
-            Span::styled(
-                s.display_path(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(s.display_path(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw("  ·  "),
             Span::styled(model, Style::default().fg(model_color)),
-            if s.is_active {
-                Span::styled("  ● Active", Style::default().fg(Color::Green))
-            } else {
-                Span::raw("")
-            },
+            if s.is_active { Span::styled("  ● Active", Style::default().fg(Color::Green)) } else { Span::raw("") },
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1215,10 +1479,7 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
             stat_span("Cache hit", &cache_pct, Color::DarkGray),
         ]),
         Line::from(""),
-        Line::from(Span::styled(
-            "Tokens",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-        )),
+        Line::from(Span::styled("Tokens", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))),
         token_line("Input",       s.token_usage.input_tokens,       Color::White),
         token_line("Output",      s.token_usage.output_tokens,      Color::Cyan),
         token_line("Cache read",  s.token_usage.cache_read_tokens,  Color::Blue),
@@ -1234,14 +1495,10 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
         let sc = if score >= 70 { Color::Green } else if score >= 40 { Color::Yellow } else { Color::Red };
         lines.push(Line::from(vec![
             Span::styled("CLAUDE.md  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("{} / 100", score),
-                Style::default().fg(sc).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(format!("{} / 100", score), Style::default().fg(sc).add_modifier(Modifier::BOLD)),
         ]));
     }
 
-    // Context gauge
     let gauge_y = inner.y + lines.len() as u16 + 1;
     if gauge_y < inner.y + inner.height {
         f.render_widget(
@@ -1252,14 +1509,10 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
         );
     }
 
-    // Footer line
     let footer_y = inner.y + inner.height.saturating_sub(1);
     if footer_y > inner.y {
         let path_short = if s.project_path.len() > (inner.width as usize).saturating_sub(20) {
-            format!(
-                "…{}",
-                &s.project_path[s.project_path.len().saturating_sub(inner.width as usize - 22)..]
-            )
+            format!("…{}", &s.project_path[s.project_path.len().saturating_sub(inner.width as usize - 22)..])
         } else {
             s.project_path.clone()
         };
@@ -1274,10 +1527,7 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
 
     f.render_widget(
         Paragraph::new(lines.clone()),
-        Rect {
-            height: (lines.len() as u16).min(inner.height),
-            ..inner
-        },
+        Rect { height: (lines.len() as u16).min(inner.height), ..inner },
     );
 }
 
@@ -1291,14 +1541,12 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             Span::styled("[q] quit", Style::default().fg(Color::DarkGray)),
         ]
     } else {
-        let mut v = vec![Span::styled(
-            "  [←/→] switch  ",
-            Style::default().fg(Color::DarkGray),
-        )];
+        let mut v = vec![Span::styled("  [←/→] switch  ", Style::default().fg(Color::DarkGray))];
         let extra: &[(&str, Color)] = match app.tab {
             Tab::Dashboard => &[("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Sessions  => &[("[↑/↓] select  ", Color::DarkGray), ("[Enter] detail  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Analytics => &[("[↑/↓] scroll  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
+            Tab::Agents    => &[("[↑/↓] select  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
         };
         for (txt, col) in extra {
             v.push(Span::styled(*txt, Style::default().fg(*col)));
@@ -1324,23 +1572,68 @@ fn context_color(fraction: f64) -> Color {
     else                    { Color::Red    }
 }
 
+/// `"★★★★☆"` — filled stars then empty stars.
+fn stars(score: u8) -> String {
+    let n = score.min(5) as usize;
+    format!("{}{}", "★".repeat(n), "☆".repeat(5 - n))
+}
+
+/// `"[████████░░]"` — progress bar with `width` interior chars.
+fn xp_bar(progress: f64, width: usize) -> String {
+    let filled = (progress.clamp(0.0, 1.0) * width as f64).round() as usize;
+    format!("[{}{}]", "█".repeat(filled), "░".repeat(width.saturating_sub(filled)))
+}
+
+fn quality_style(score: u8) -> Style {
+    let color = match score {
+        5 => Color::Green,
+        4 => Color::Cyan,
+        3 => Color::Yellow,
+        _ => Color::Red,
+    };
+    Style::default().fg(color)
+}
+
+fn quality_label(score: u8) -> &'static str {
+    match score {
+        5 => "Rich output, task completed cleanly",
+        4 => "Good output, task completed",
+        3 => "Moderate output, completed",
+        2 => "Minimal output or errors detected",
+        _ => "Did not complete",
+    }
+}
+
+/// Human-readable duration for an agent run.
+fn agent_duration_str(agent: &AgentRun) -> String {
+    let end = agent.end_time.unwrap_or_else(Local::now);
+    let secs = (end - agent.start_time).num_seconds().max(0);
+    if secs < 60 {
+        format!("{}s", secs)
+    } else {
+        format::duration(secs)
+    }
+}
+
+/// Simple word-wrap: split `text` into lines of at most `width` chars, max `max_lines`.
+fn wrap_text(text: &str, width: usize, max_lines: usize) -> Vec<String> {
+    if width == 0 { return vec![]; }
+    let chars: Vec<char> = text.chars().collect();
+    chars
+        .chunks(width)
+        .take(max_lines)
+        .map(|c| c.iter().collect())
+        .collect()
+}
+
 fn stat_span<'a>(label: &'a str, value: &'a str, color: Color) -> Span<'a> {
-    Span::styled(
-        format!("{}  {}", label, value),
-        Style::default().fg(color),
-    )
+    Span::styled(format!("{}  {}", label, value), Style::default().fg(color))
 }
 
 fn token_line(label: &str, count: u64, color: Color) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("  {:<14}", label),
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::styled(
-            format::tokens(count),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(format!("  {:<14}", label), Style::default().fg(Color::DarkGray)),
+        Span::styled(format::tokens(count), Style::default().fg(color).add_modifier(Modifier::BOLD)),
     ])
 }
 

@@ -2,6 +2,48 @@
 
 ---
 
+## [0.4.0] — 2026-05-27
+
+### Agents Tab — live sub-agent monitoring
+
+- **New `Agents` tab** (4th tab in the TUI) dedicated to monitoring every sub-agent spawned by Claude Code in the active session
+- **Agent list** (top 38% of screen) — sortable by start time, showing:
+  - Status dot: `●` green = running, `✓` gray = completed, `✗` red = failed
+  - Agent type (`Explore`, `Plan`, `general-purpose`, `claude-code-guide`, etc.)
+  - **XP / Level system** — `Lv1 [████░░░░]` based on how many tasks that agent type has completed globally across all sessions:
+    - Lv.1: 1–4 tasks · Lv.2: 5–14 · Lv.3: 15–29 · Lv.4: 30–59 · Lv.5: 60+
+  - Task description (one-line summary from Claude's `input.description`)
+  - **Quality stars** `★★★★☆` (1–5) computed from output completeness and length:
+    - 5 = rich output (≥ 500 chars, no error keywords) · 4 = good · 3 = moderate · 2 = minimal/errors · 1 = did not complete
+  - Cost and duration per agent
+  - **Green `●` dot** on the Agents tab label when any agent is still running
+- **Agent detail panel** (bottom 62%) — updates as cursor moves:
+  - Full task description and prompt preview
+  - Status / duration / model / cost line
+  - Per-token breakdown bars with percentage share of the parent session total (Input / Output / Cache R)
+  - Output preview (first 250 chars of the agent's result)
+  - Quality label explaining the score
+  - Falls back gracefully when the sub-agent JSONL file is unavailable
+- **`r` key** on the Agents tab triggers an immediate agent list refresh
+- **Global XP counts** computed once on first tab visit then cached; re-computed on full refresh
+
+### Bug fix — phantom sessions from `subagents/` directories
+
+- `collect_jsonl` in `monitor.rs` was recursing into `subagents/`, `tool-results/`, and `memory/` companion directories under `~/.claude/projects/`, causing those sub-agent files to appear as zero-cost sessions in the Sessions list and analytics — this is now fixed
+
+### Internal
+
+- Added `AgentRun` struct to `models.rs` with full agent metadata, token usage, cost, model, quality score
+- Added `compute_quality_score()` and `agent_level()` free functions to `models.rs`
+- Added `jsonl_path: PathBuf` field to `ClaudeSession` for sub-agent file lookup
+- Added `parse_agents()` to `parser.rs` — two-pass JSONL scan matching `tool_use`→`tool_result` pairs; enriches each run with token data from the sub-agent's own JSONL
+- Added `extract_tool_result_text()` helper to handle both `String` and `[{type:"text"}]` content formats
+- Added `load_agents_for_session()` and `compute_agent_type_counts()` to `monitor.rs`
+- Extended `Tab` enum with `Tab::Agents = 3`; updated all nav paths
+- Added `draw_agents_screen`, `draw_agent_list`, `draw_agent_detail`, `stars`, `xp_bar`, `quality_style`, `quality_label`, `agent_duration_str`, `wrap_text` helpers to `tui.rs`
+
+---
+
 ## [0.3.0] — 2026-05-27
 
 ### Dashboard — full redesign

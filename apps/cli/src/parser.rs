@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::models::{ClaudeSession, TokenUsage};
+use crate::models::{AgentRun, ClaudeSession, TokenUsage, compute_quality_score};
 
 // ── Pricing table ($ per million tokens) ─────────────────────────────────────
 
@@ -31,11 +31,9 @@ fn pricing_for(model: &str) -> Pricing {
 // ── Timestamp parsing ─────────────────────────────────────────────────────────
 
 fn parse_timestamp(s: &str) -> Option<DateTime<Local>> {
-    // Try RFC3339 / ISO 8601 first
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return Some(dt.with_timezone(&Local));
     }
-    // Fallback: basic format without colons in offset (e.g. "2024-01-15T10:30:00.000Z")
     if let Ok(dt) = DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.fZ") {
         return Some(Local.from_utc_datetime(&dt.naive_utc()));
     }
@@ -55,14 +53,12 @@ const JUNK_DIRS: &[&str] = &[
 fn score_claudemd(content: &str) -> u8 {
     let words: usize = content.split_whitespace().count();
 
-    // Length score (0–30)
     let length_score: u32 = if words >= 300 { 30 }
         else if words >= 150 { 23 }
         else if words >= 80  { 16 }
         else if words >= 30  {  8 }
         else                 {  0 };
 
-    // Structure score (0–30)
     let mut headings = 0u32;
     let mut code_delimiters = 0u32;
     let mut bullets = 0u32;
@@ -76,7 +72,6 @@ fn score_claudemd(content: &str) -> u8 {
         + ((code_delimiters / 2) * 5).min(10)
         + (bullets / 4).min(5);
 
-    // Content coverage (0–40) — 8 categories × 5 pts
     let lower = content.to_lowercase();
     let categories: &[&[&str]] = &[
         &["build", "compile", "swift build", "npm run", "yarn", "make ", "gradle", "cmake"],
@@ -99,7 +94,6 @@ fn score_claudemd(content: &str) -> u8 {
 fn find_claudemd(project_path: &str) -> Option<u8> {
     let start = Path::new(project_path);
 
-    // Pass 1: walk up (max 8 steps)
     let mut dir = start.to_path_buf();
     let home = dirs::home_dir();
     for _ in 0..8 {
@@ -115,7 +109,6 @@ fn find_claudemd(project_path: &str) -> Option<u8> {
         if !dir.pop() { break; }
     }
 
-    // Pass 2: walk down (BFS, depth ≤ 4)
     let mut queue: Vec<(std::path::PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
     while let Some((cur, depth)) = queue.first().cloned() {
         queue.remove(0);
@@ -149,7 +142,6 @@ fn find_claudemd(project_path: &str) -> Option<u8> {
 // ── Main JSONL parser ─────────────────────────────────────────────────────────
 
 /// Parse a single JSONL session file into a `ClaudeSession`.
-/// `active_ids` is the set of session IDs currently listed in `~/.claude/sessions/`.
 pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool) -> Result<ClaudeSession> {
     let content = fs::read_to_string(path)?;
     let session_id = path.file_stem()
@@ -180,7 +172,6 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
         if line.is_empty() { continue; }
         let Ok(val): Result<Value, _> = serde_json::from_str(line) else { continue };
 
-        // Timestamp
         let turn_time = val.get("timestamp")
             .and_then(Value::as_str)
             .and_then(parse_timestamp);
@@ -190,7 +181,6 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
             last_time = Some(t);
         }
 
-        // cwd + entrypoint (once)
         if project_path.is_empty() {
             if let Some(cwd) = val.get("cwd").and_then(Value::as_str) {
                 project_path = cwd.to_string();
@@ -204,17 +194,14 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
 
         let entry_type = val.get("type").and_then(Value::as_str).unwrap_or("");
 
-        // AI title
         if entry_type == "ai-title" {
             if let Some(t) = val.get("aiTitle").and_then(Value::as_str) {
                 title = Some(t.to_string());
             }
         }
 
-        // Assistant turns → tokens + cost
         if entry_type == "assistant" {
             if let Some(msg) = val.get("message") {
-                // Model
                 if let Some(m) = msg.get("model").and_then(Value::as_str) {
                     if !m.is_empty() { model = m.to_string(); }
                 }
@@ -230,10 +217,8 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
                     cache_read_tokens  += cr;
                     cache_write_tokens += cw;
 
-                    // Context window: last turn only
                     last_context_window = inp + cr + cw;
 
-                    // Thinking tokens from content blocks
                     let turn_thinking: u64 = msg.get("content")
                         .and_then(Value::as_array)
                         .map(|blocks| {
@@ -246,7 +231,6 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
                         .unwrap_or(0);
                     thinking_tokens += turn_thinking;
 
-                    // Per-turn cost
                     let p = pricing_for(&model);
                     let turn_cost = (inp  as f64 * p.input
                                    + out  as f64 * p.output
@@ -255,7 +239,6 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
                                   / 1_000_000.0;
                     total_cost += turn_cost;
 
-                    // Daily attribution
                     let day: NaiveDate = turn_time
                         .unwrap_or_else(Local::now)
                         .date_naive();
@@ -270,7 +253,6 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
     let is_active = is_active_by_id || is_recent;
     let end_time = if is_active { None } else { last_time };
 
-    // CLAUDE.md score (best-effort; ignore errors)
     let claudemd_score = if project_path.is_empty() {
         None
     } else {
@@ -297,5 +279,252 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
         entrypoint,
         claudemd_score,
         daily_costs,
+        jsonl_path: path.to_path_buf(),
     })
+}
+
+// ── Agent parsing ─────────────────────────────────────────────────────────────
+
+/// Extract text from a polymorphic `tool_result` content field.
+/// Claude Code writes it as either a bare String or [{type:"text", text:"..."}].
+fn extract_tool_result_text(content: &Value) -> String {
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(arr) => arr.iter()
+            .filter(|i| i.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|i| i.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+/// Internal accumulator while scanning JSONL for a pending (not-yet-completed) agent.
+struct PendingAgent {
+    subagent_type: String,
+    description:   String,
+    prompt:        String,
+    start_time:    DateTime<Local>,
+}
+
+/// Parse all sub-agent tool calls from a session's JSONL file.
+///
+/// For each Agent tool_use + matching tool_result pair, builds an `AgentRun`.
+/// Also attempts to read the sub-agent's own JSONL file for token usage.
+pub fn parse_agents(session_path: &Path) -> Vec<AgentRun> {
+    let Ok(content) = fs::read_to_string(session_path) else { return vec![] };
+
+    // Directory containing the session file — used to find subagents/
+    let project_dir = session_path.parent().unwrap_or(Path::new("."));
+
+    let mut pending: HashMap<String, PendingAgent> = HashMap::new();
+    let mut completed: Vec<AgentRun> = Vec::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let Ok(val): Result<Value, _> = serde_json::from_str(line) else { continue };
+
+        let turn_time = val.get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(parse_timestamp);
+
+        let entry_type = val.get("type").and_then(Value::as_str).unwrap_or("");
+
+        // ── Assistant turn: collect Agent tool_use calls ──────────────────
+        if entry_type == "assistant" {
+            let Some(msg) = val.get("message") else { continue };
+            let Some(blocks) = msg.get("content").and_then(Value::as_array) else { continue };
+
+            for block in blocks {
+                let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                let block_name = block.get("name").and_then(Value::as_str).unwrap_or("");
+                if block_type != "tool_use" || block_name != "Agent" { continue; }
+
+                let tool_use_id = block.get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                if tool_use_id.is_empty() { continue; }
+
+                let input = block.get("input").cloned().unwrap_or(Value::Null);
+                let subagent_type = input.get("subagent_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let description = input.get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let prompt = input.get("prompt")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+
+                pending.insert(tool_use_id, PendingAgent {
+                    subagent_type,
+                    description,
+                    prompt,
+                    start_time: turn_time.unwrap_or_else(Local::now),
+                });
+            }
+        }
+
+        // ── User turn: collect tool_result completions ────────────────────
+        if entry_type == "user" {
+            // sourceToolAssistantUUID links back to the sub-agent file
+            let source_uuid = val.get("sourceToolAssistantUUID")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+
+            let Some(msg) = val.get("message") else { continue };
+            let Some(blocks) = msg.get("content").and_then(Value::as_array) else { continue };
+
+            for block in blocks {
+                let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+                if block_type != "tool_result" { continue; }
+
+                let tool_use_id = block.get("tool_use_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+
+                let Some(pending_agent) = pending.remove(&tool_use_id) else { continue };
+
+                let raw_content = block.get("content").cloned().unwrap_or(Value::Null);
+                let full_text   = extract_tool_result_text(&raw_content);
+                let preview     = full_text.chars().take(250).collect::<String>();
+
+                let quality = compute_quality_score(true, &full_text);
+
+                completed.push(AgentRun {
+                    tool_use_id,
+                    agent_id:       source_uuid.clone(),
+                    subagent_type:  pending_agent.subagent_type,
+                    description:    pending_agent.description,
+                    prompt:         pending_agent.prompt,
+                    start_time:     pending_agent.start_time,
+                    end_time:       Some(turn_time.unwrap_or_else(Local::now)),
+                    completed:      true,
+                    output_preview: preview,
+                    token_usage:    TokenUsage::default(),
+                    total_cost:     0.0,
+                    model:          None,
+                    quality_score:  quality,
+                });
+            }
+        }
+    }
+
+    // Flush still-pending (running) agents as incomplete
+    for (tool_use_id, pa) in pending {
+        completed.push(AgentRun {
+            tool_use_id,
+            agent_id:       None,
+            subagent_type:  pa.subagent_type,
+            description:    pa.description,
+            prompt:         pa.prompt,
+            start_time:     pa.start_time,
+            end_time:       None,
+            completed:      false,
+            output_preview: String::new(),
+            token_usage:    TokenUsage::default(),
+            total_cost:     0.0,
+            model:          None,
+            quality_score:  1,
+        });
+    }
+
+    // Enrich with token usage from sub-agent JSONL files
+    for agent in &mut completed {
+        let Some(ref agent_id) = agent.agent_id else { continue };
+        let sub_path = project_dir
+            .join("subagents")
+            .join(format!("agent-{}.jsonl", agent_id));
+        if !sub_path.exists() { continue; }
+
+        if let Some((usage, cost, m)) = parse_subagent_usage(&sub_path) {
+            agent.token_usage = usage;
+            agent.total_cost  = cost;
+            agent.model       = m;
+        }
+    }
+
+    // Sort chronologically
+    completed.sort_by_key(|a| a.start_time);
+    completed
+}
+
+/// Read a sub-agent JSONL and return `(TokenUsage, total_cost, Option<model>)`.
+fn parse_subagent_usage(path: &Path) -> Option<(TokenUsage, f64, Option<String>)> {
+    let content = fs::read_to_string(path).ok()?;
+
+    let mut model = String::from("claude-sonnet-4-6");
+    let mut input_tokens:       u64 = 0;
+    let mut output_tokens:      u64 = 0;
+    let mut cache_read_tokens:  u64 = 0;
+    let mut cache_write_tokens: u64 = 0;
+    let mut thinking_tokens:    u64 = 0;
+    let mut total_cost = 0.0f64;
+    let mut found_any = false;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let Ok(val): Result<Value, _> = serde_json::from_str(line) else { continue };
+
+        if val.get("type").and_then(Value::as_str) != Some("assistant") { continue; }
+        let Some(msg) = val.get("message") else { continue };
+
+        if let Some(m) = msg.get("model").and_then(Value::as_str) {
+            if !m.is_empty() { model = m.to_string(); }
+        }
+
+        if let Some(usage) = msg.get("usage") {
+            let inp = usage.get("input_tokens")               .and_then(Value::as_u64).unwrap_or(0);
+            let out = usage.get("output_tokens")              .and_then(Value::as_u64).unwrap_or(0);
+            let cr  = usage.get("cache_read_input_tokens")    .and_then(Value::as_u64).unwrap_or(0);
+            let cw  = usage.get("cache_creation_input_tokens").and_then(Value::as_u64).unwrap_or(0);
+
+            input_tokens       += inp;
+            output_tokens      += out;
+            cache_read_tokens  += cr;
+            cache_write_tokens += cw;
+
+            let think: u64 = msg.get("content")
+                .and_then(Value::as_array)
+                .map(|blocks| {
+                    blocks.iter()
+                        .filter(|b| b.get("type").and_then(Value::as_str) == Some("thinking"))
+                        .filter_map(|b| b.get("thinking").and_then(Value::as_str))
+                        .map(|t| (t.len() as u64 / 4).max(1))
+                        .sum()
+                })
+                .unwrap_or(0);
+            thinking_tokens += think;
+
+            let p = pricing_for(&model);
+            total_cost += (inp as f64 * p.input
+                         + out as f64 * p.output
+                         + cr  as f64 * p.cache_read
+                         + cw  as f64 * p.cache_write)
+                        / 1_000_000.0;
+            found_any = true;
+        }
+    }
+
+    if !found_any { return None; }
+
+    Some((
+        TokenUsage {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            thinking_tokens,
+            context_window_tokens: 0,
+        },
+        total_cost,
+        Some(model),
+    ))
 }

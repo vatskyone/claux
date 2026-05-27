@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local, NaiveDate};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 // ── Token usage for one session ───────────────────────────────────────────────
 
@@ -47,6 +48,9 @@ pub struct ClaudeSession {
     /// Per-calendar-day cost attribution (local midnight as key).
     #[serde(skip)]
     pub daily_costs:    HashMap<NaiveDate, f64>,
+    /// Absolute path to the source JSONL file (used for agent parsing).
+    #[serde(skip)]
+    pub jsonl_path:     PathBuf,
 }
 
 impl ClaudeSession {
@@ -83,6 +87,75 @@ impl ClaudeSession {
     /// Display path: /Users/foo/... → ~/...
     pub fn display_path(&self) -> String {
         crate::format::project_path(&self.project_path)
+    }
+}
+
+// ── Sub-agent run ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct AgentRun {
+    /// The `tool_use.id` from the parent session's assistant turn.
+    pub tool_use_id:    String,
+    /// The short agentId from `sourceToolAssistantUUID` (used to find sub-agent JSONL).
+    pub agent_id:       Option<String>,
+    /// e.g. "Explore", "Plan", "general-purpose", "claude-code-guide"
+    pub subagent_type:  String,
+    /// One-line task summary from `input.description`.
+    pub description:    String,
+    /// Full prompt text from `input.prompt`.
+    pub prompt:         String,
+    /// Timestamp of the assistant turn that spawned the agent.
+    pub start_time:     DateTime<Local>,
+    /// Timestamp of the user turn that delivered the tool_result.
+    pub end_time:       Option<DateTime<Local>>,
+    /// Whether a matching tool_result was received.
+    pub completed:      bool,
+    /// First 250 chars of the tool_result content.
+    pub output_preview: String,
+    /// Accumulated from the sub-agent's JSONL file; zeroed if file not found.
+    pub token_usage:    TokenUsage,
+    pub total_cost:     f64,
+    pub model:          Option<String>,
+    /// Quality score 1–5 (computed from completion status and output richness).
+    pub quality_score:  u8,
+}
+
+/// Compute a 1–5 quality score for an agent run.
+///
+/// - 1 = did not complete
+/// - 2 = completed but output too short or contains error keywords
+/// - 3 = moderate output (50–199 chars)
+/// - 4 = good output (200–499 chars)
+/// - 5 = rich output (≥ 500 chars)
+pub fn compute_quality_score(completed: bool, output: &str) -> u8 {
+    if !completed { return 1; }
+    let low = output.to_lowercase();
+    let has_error = low.contains("error:") || low.contains("failed") || low.contains("unable to");
+    if has_error { return 2; }
+    let len = output.len();
+    if len < 50        { return 2; }
+    if len < 200       { return 3; }
+    if len < 500       { return 4; }
+    5
+}
+
+/// Returns `(level, progress)` for display as an XP bar.
+///
+/// Level thresholds (total tasks of that type across all sessions):
+/// - Lv.0 : 0 tasks
+/// - Lv.1 : 1–4
+/// - Lv.2 : 5–14
+/// - Lv.3 : 15–29
+/// - Lv.4 : 30–59
+/// - Lv.5 : 60+
+pub fn agent_level(total_tasks: usize) -> (u8, f64) {
+    match total_tasks {
+        0       => (0, 0.0),
+        1..=4   => (1, (total_tasks - 1) as f64 / 4.0),
+        5..=14  => (2, (total_tasks - 5) as f64 / 10.0),
+        15..=29 => (3, (total_tasks - 15) as f64 / 15.0),
+        30..=59 => (4, (total_tasks - 30) as f64 / 30.0),
+        _       => (5, 1.0),
     }
 }
 
