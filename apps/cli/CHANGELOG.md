@@ -2,6 +2,44 @@
 
 ---
 
+## [0.5.0] — 2026-05-27
+
+### Session Export (`claux export`)
+- New `claux export` command — dumps all session history as JSON (default) or CSV
+- `--format csv` — produces a flat table with columns: `id, project_path, start_time, end_time, duration_secs, cost_usd, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, thinking_tokens, is_active, title, tag`
+- `--output FILE` — write directly to a file instead of stdout
+- `-n N` — limit to last N sessions (default: all)
+- Tags are included in the export
+
+### Monthly Cost Forecast (`Analytics` tab)
+- New **Forecast** panel in the Analytics tab (between the 30-day sparkline and the project/model tables)
+- Shows four figures side by side: **Daily avg (7d)** · **Month to date** · **Est. end of month** · **Annual proj.**
+- All projections based on 7-day rolling average spend; projected EOM accounts for remaining calendar days in the current month
+
+### Session Tagging
+- New `claux tag <session-id-prefix> [label]` command — attach a short label to any session
+  - `claux tag abc123 "refactor"` — set tag
+  - `claux tag abc123` — show current tag
+  - `claux tag abc123 -r` — remove tag
+- Tags persist in `~/.claude/claux/tags.json`
+- **Sessions list** in `claux tui` shows a `[tag]` column next to session title
+- **Session detail overlay** shows the current tag and `[t] edit` hint
+- Pressing `t` inside the detail overlay opens an inline tag input mode:
+  - Type any text (max 30 chars), `Enter` saves, `Esc` cancels, `Backspace` deletes
+  - The cursor `▌` is shown live in the input field
+  - Saving immediately reloads sessions so the new tag is visible in the list
+- Tags are included in `claux export` output
+
+### Internal
+- New `src/tags.rs` module — `load_tags()`, `save_tag()` backed by `~/.claude/claux/tags.json`
+- Added `tag: Option<String>` field to `ClaudeSession` (loaded and merged in `monitor::load_sessions`)
+- Added `MonthlyForecast` struct and `compute_monthly_forecast()` to `spend.rs`
+- Added `tag_editing: bool` and `tag_input_buf: String` to TUI `App` state
+- Updated `draw_sessions_list` with a `show_tags` flag and `Tag` column
+- Updated footer to show tag-edit hints contextually
+
+---
+
 ## [0.4.0] — 2026-05-27
 
 ### Agents Tab — live sub-agent monitoring

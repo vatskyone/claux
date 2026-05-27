@@ -137,6 +137,14 @@ pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
             .then(b.start_time.cmp(&a.start_time))
     });
 
+    // Merge user-assigned tags
+    let tags = crate::tags::load_tags();
+    for s in &mut sessions {
+        if let Some(t) = tags.get(&s.id) {
+            s.tag = Some(t.clone());
+        }
+    }
+
     sessions
 }
 

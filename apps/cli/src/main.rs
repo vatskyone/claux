@@ -5,11 +5,13 @@ mod monitor;
 mod parser;
 mod render;
 mod spend;
+mod tags;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
+use commands::export::ExportFormat;
 use monitor::{load_sessions, SessionCache};
 
 #[derive(Parser)]
@@ -60,6 +62,35 @@ enum Commands {
         json: bool,
     },
 
+    /// Export session history as JSON or CSV.
+    Export {
+        /// Output format (json or csv).
+        #[arg(long, value_enum, default_value = "json")]
+        format: ExportFormat,
+        /// Write to this file instead of stdout.
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+        /// Maximum number of sessions to export.
+        #[arg(long, short = 'n', default_value_t = 10000)]
+        limit: usize,
+    },
+
+    /// Get or set a label on a session. Use a unique ID prefix to identify the session.
+    ///
+    /// Examples:
+    ///   claux tag abc123          # show current tag
+    ///   claux tag abc123 "work"   # set tag
+    ///   claux tag abc123 -r       # remove tag
+    Tag {
+        /// Session ID prefix (unique prefix of the session ID shown in `claux sessions`).
+        session: String,
+        /// Label to assign (omit to show current tag).
+        label: Option<String>,
+        /// Remove the tag.
+        #[arg(long, short = 'r')]
+        remove: bool,
+    },
+
     /// Launch the live TUI dashboard (press q to quit, r to refresh).
     Tui,
 
@@ -103,6 +134,12 @@ fn main() -> Result<()> {
         }
         Commands::Analytics { days, json } => {
             commands::analytics::run(&sessions, days, json)?;
+        }
+        Commands::Export { format, output, limit } => {
+            commands::export::run(&sessions, limit, format, output.as_deref())?;
+        }
+        Commands::Tag { session, label, remove } => {
+            commands::tag::run(&sessions, &session, label.as_deref(), remove)?;
         }
         Commands::Tui | Commands::Completions { .. } => unreachable!(),
     }

@@ -1,0 +1,3 @@
+1. Add a session export feature that lets users save their Claude Code session history as a formatted JSON or CSV file for external analysis or archiving.
+2. Introduce a cost forecasting panel that estimates projected monthly spend based on current session usage trends and token consumption rates.
+3. Allow users to tag or label individual sessions with custom notes, making it easier to search and filter past sessions by project or topic.

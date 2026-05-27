@@ -23,8 +23,10 @@ use crate::monitor::{
     compute_agent_type_counts, load_agents_for_session, load_sessions, SessionCache,
 };
 use crate::spend::{
-    compute_daily_spend, compute_model_breakdown, compute_project_breakdown, compute_spend,
+    compute_daily_spend, compute_model_breakdown, compute_monthly_forecast,
+    compute_project_breakdown, compute_spend,
 };
+use crate::tags;
 use crate::format;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -78,14 +80,17 @@ struct App {
     // Session detail overlay
     detail_open:       Option<usize>,
     // Agents tab
-    agents:            Vec<AgentRun>,
-    agent_cursor:      usize,
-    agent_type_counts: HashMap<String, usize>,
+    agents:             Vec<AgentRun>,
+    agent_cursor:       usize,
+    agent_type_counts:  HashMap<String, usize>,
     agent_counts_dirty: bool,
+    // Tag editing (inside session detail overlay)
+    tag_editing:        bool,
+    tag_input_buf:      String,
     // Shared data
-    sessions:          Vec<ClaudeSession>,
-    cache:             SessionCache,
-    last_refresh:      Instant,
+    sessions:           Vec<ClaudeSession>,
+    cache:              SessionCache,
+    last_refresh:       Instant,
 }
 
 impl App {
@@ -97,11 +102,13 @@ impl App {
             session_cursor:    0,
             session_scroll:    0,
             analytics_scroll:  0,
-            detail_open:       None,
-            agents:            vec![],
-            agent_cursor:      0,
-            agent_type_counts: HashMap::new(),
+            detail_open:        None,
+            agents:             vec![],
+            agent_cursor:       0,
+            agent_type_counts:  HashMap::new(),
             agent_counts_dirty: true,
+            tag_editing:        false,
+            tag_input_buf:      String::new(),
             sessions,
             cache,
             last_refresh: Instant::now(),
@@ -177,11 +184,45 @@ fn event_loop(term: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
 
 /// Returns `true` if the app should quit.
 fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usize) -> bool {
-    // Detail overlay gets first priority
+    // Tag input mode gets highest priority
+    if app.tag_editing {
+        match code {
+            KeyCode::Enter => {
+                if let Some(idx) = app.detail_open {
+                    if let Some(s) = app.sessions.get(idx) {
+                        let _ = tags::save_tag(&s.id, &app.tag_input_buf);
+                        // Reload sessions to pick up the new tag
+                        app.sessions = load_sessions(&mut app.cache);
+                    }
+                }
+                app.tag_editing = false;
+            }
+            KeyCode::Esc => {
+                app.tag_editing    = false;
+                app.tag_input_buf  = String::new();
+            }
+            KeyCode::Backspace => { app.tag_input_buf.pop(); }
+            KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
+                if app.tag_input_buf.len() < 30 { app.tag_input_buf.push(c); }
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    // Detail overlay gets second priority
     if app.detail_open.is_some() {
         match code {
             KeyCode::Esc | KeyCode::Backspace => { app.detail_open = None; }
             KeyCode::Char('q') => return true,
+            KeyCode::Char('t') => {
+                if let Some(idx) = app.detail_open {
+                    if let Some(s) = app.sessions.get(idx) {
+                        app.tag_input_buf = s.tag.clone().unwrap_or_default();
+                        app.tag_editing   = true;
+                    }
+                }
+            }
             KeyCode::Char('c') => {
                 if let Some(idx) = app.detail_open {
                     if let Some(s) = app.sessions.get(idx) {
@@ -297,7 +338,7 @@ fn draw(f: &mut Frame, app: &App) {
 
     if let Some(idx) = app.detail_open {
         if let Some(session) = app.sessions.get(idx) {
-            draw_detail_overlay(f, area, session);
+            draw_detail_overlay(f, area, session, app.tag_editing, &app.tag_input_buf);
         }
     }
 }
@@ -373,7 +414,7 @@ fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
 // ── Sessions screen ───────────────────────────────────────────────────────────
 
 fn draw_sessions_screen(f: &mut Frame, area: Rect, app: &App) {
-    draw_sessions_list(f, area, &app.sessions, Some(app.session_cursor), app.session_scroll);
+    draw_sessions_list(f, area, &app.sessions, Some(app.session_cursor), app.session_scroll, true);
 }
 
 // ── Analytics screen ──────────────────────────────────────────────────────────
@@ -382,15 +423,17 @@ fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
     let daily    = compute_daily_spend(&app.sessions);
     let projects = compute_project_breakdown(&app.sessions);
     let models   = compute_model_breakdown(&app.sessions);
+    let forecast = compute_monthly_forecast(&app.sessions);
 
     let mut model_output: HashMap<String, u64> = HashMap::new();
     for s in &app.sessions {
         *model_output.entry(s.model.clone()).or_insert(0) += s.token_usage.output_tokens;
     }
 
-    let chart7_h    = area.height * 50 / 100;
-    let sparkline_h = 4u16;
-    let tables_h    = area.height.saturating_sub(chart7_h + sparkline_h);
+    let chart7_h    = area.height * 45 / 100;
+    let sparkline_h = 3u16;
+    let forecast_h  = 4u16;
+    let tables_h    = area.height.saturating_sub(chart7_h + sparkline_h + forecast_h);
     let proj_h      = tables_h * 55 / 100;
     let model_h     = tables_h.saturating_sub(proj_h);
 
@@ -399,6 +442,7 @@ fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
         .constraints([
             Constraint::Length(chart7_h.max(8)),
             Constraint::Length(sparkline_h),
+            Constraint::Length(forecast_h),
             Constraint::Length(proj_h.max(4)),
             Constraint::Length(model_h.max(4)),
         ])
@@ -406,11 +450,12 @@ fn draw_analytics_screen(f: &mut Frame, area: Rect, app: &App) {
 
     draw_7day_chart(f, chunks[0], &daily);
     draw_30day_sparkline(f, chunks[1], &daily);
+    draw_forecast_panel(f, chunks[2], &forecast);
 
     let bottom_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-        .split(chunks[2]);
+        .split(chunks[3]);
 
     draw_project_table(f, bottom_cols[0], &projects, app.analytics_scroll);
     draw_model_table(f, bottom_cols[1], &models, &model_output);
@@ -906,6 +951,46 @@ fn draw_30day_sparkline(f: &mut Frame, area: Rect, daily: &[crate::models::Daily
     }
 }
 
+// ── Monthly forecast panel ────────────────────────────────────────────────────
+
+fn draw_forecast_panel(f: &mut Frame, area: Rect, fc: &crate::models::MonthlyForecast) {
+    let block = Block::default()
+        .title(" Forecast ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height == 0 { return; }
+
+    let col_w = (inner.width / 4) as usize;
+
+    let items: &[(&str, String, Color)] = &[
+        ("Daily avg (7d)", format::cost(fc.avg_per_day_7d),   Color::DarkGray),
+        ("Month to date",  format::cost(fc.month_to_date),    Color::White),
+        ("Est. end of mo", format::cost(fc.projected_eom),    Color::Yellow),
+        ("Annual proj.",   format::cost(fc.projected_annual), Color::DarkGray),
+    ];
+
+    let label_line: Vec<Span> = items.iter().map(|(lbl, _, _)| {
+        Span::styled(format!("{:<width$}", lbl, width = col_w), Style::default().fg(Color::DarkGray))
+    }).collect();
+    let value_line: Vec<Span> = items.iter().map(|(_, val, color)| {
+        Span::styled(
+            format!("{:<width$}", val, width = col_w),
+            Style::default().fg(*color).add_modifier(Modifier::BOLD),
+        )
+    }).collect();
+
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(label_line),
+            Line::from(value_line),
+        ]),
+        Rect { height: inner.height.min(2), ..inner },
+    );
+}
+
 // ── Project table ─────────────────────────────────────────────────────────────
 
 fn draw_project_table(
@@ -1352,6 +1437,7 @@ fn draw_sessions_list(
     sessions: &[ClaudeSession],
     cursor: Option<usize>,
     scroll: usize,
+    show_tags: bool,
 ) {
     let block = Block::default()
         .title(" Sessions ")
@@ -1383,17 +1469,38 @@ fn draw_sessions_list(
         let model   = format::model_short_name(&s.model);
         let path    = s.display_path();
         let title   = s.title.as_deref().unwrap_or(path.as_str());
-        let label   = if title.len() > 38 { format!("{}…", &title[..37]) } else { title.to_string() };
+        let label   = if title.len() > 34 { format!("{}…", &title[..33]) } else { title.to_string() };
         let cost    = format::cost(s.total_cost);
+        let tag_str = if show_tags {
+            s.tag.as_deref()
+              .map(|t| {
+                  let t = if t.len() > 8 { format!("{}…", &t[..7]) } else { t.to_string() };
+                  format!("[{}]", t)
+              })
+              .unwrap_or_default()
+        } else { String::new() };
 
-        Row::new(vec![
-            Cell::from(dot).style(dot_s),
-            Cell::from(when).style(Style::default().fg(Color::DarkGray)),
-            Cell::from(dur).style(Style::default().fg(Color::DarkGray)),
-            Cell::from(model).style(Style::default().fg(model_color_for(&s.model))),
-            Cell::from(label),
-            Cell::from(cost).style(Style::default().fg(Color::White)),
-        ])
+        if show_tags {
+            Row::new(vec![
+                Cell::from(dot).style(dot_s),
+                Cell::from(when).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(dur).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(model).style(Style::default().fg(model_color_for(&s.model))),
+                Cell::from(label),
+                Cell::from(tag_str).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(cost).style(Style::default().fg(Color::White)),
+            ])
+        } else {
+            Row::new(vec![
+                Cell::from(dot).style(dot_s),
+                Cell::from(when).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(dur).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(model).style(Style::default().fg(model_color_for(&s.model))),
+                Cell::from(label),
+                Cell::from(String::new()),
+                Cell::from(cost).style(Style::default().fg(Color::White)),
+            ])
+        }
         .style(if is_selected { Style::default().bg(Color::DarkGray) } else { Style::default() })
     }).collect();
 
@@ -1404,7 +1511,8 @@ fn draw_sessions_list(
             Constraint::Length(9),
             Constraint::Length(8),
             Constraint::Length(12),
-            Constraint::Min(20),
+            Constraint::Min(18),
+            Constraint::Length(11),
             Constraint::Length(8),
         ])
         .header(
@@ -1414,6 +1522,7 @@ fn draw_sessions_list(
                 Cell::from("Dur"),
                 Cell::from("Model"),
                 Cell::from(format!("Session{}", hint)),
+                Cell::from("Tag"),
                 Cell::from("Cost"),
             ])
             .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
@@ -1437,7 +1546,13 @@ fn draw_sessions_list(
 
 // ── Session detail overlay ────────────────────────────────────────────────────
 
-fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
+fn draw_detail_overlay(
+    f: &mut Frame,
+    area: Rect,
+    s: &ClaudeSession,
+    tag_editing: bool,
+    tag_input: &str,
+) {
     let popup = centered_rect(80, 85, area);
     f.render_widget(Clear, popup);
 
@@ -1499,6 +1614,29 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
         ]));
     }
 
+    // Tag row
+    lines.push(Line::from(""));
+    if tag_editing {
+        lines.push(Line::from(vec![
+            Span::styled("Tag  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("[{}▌]", tag_input),
+                Style::default().fg(Color::White).bg(Color::DarkGray).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  Enter=save  Esc=cancel", Style::default().fg(Color::DarkGray)),
+        ]));
+    } else {
+        let tag_display = s.tag.as_deref().unwrap_or("(none)");
+        lines.push(Line::from(vec![
+            Span::styled("Tag  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                if s.tag.is_some() { format!("[{}]", tag_display) } else { tag_display.to_string() },
+                Style::default().fg(if s.tag.is_some() { Color::Cyan } else { Color::DarkGray }),
+            ),
+            Span::styled("  [t] edit", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
     let gauge_y = inner.y + lines.len() as u16 + 1;
     if gauge_y < inner.y + inner.height {
         f.render_widget(
@@ -1519,7 +1657,7 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
         f.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(path_short, Style::default().fg(Color::DarkGray)),
-                Span::styled("  [c] copy path  [Esc] back", Style::default().fg(Color::DarkGray)),
+                Span::styled("  [t] tag  [c] copy path  [Esc] back", Style::default().fg(Color::DarkGray)),
             ])),
             Rect { x: inner.x, y: footer_y, width: inner.width, height: 1 },
         );
@@ -1534,9 +1672,15 @@ fn draw_detail_overlay(f: &mut Frame, area: Rect, s: &ClaudeSession) {
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
-    let spans: Vec<Span> = if app.detail_open.is_some() {
+    let spans: Vec<Span> = if app.tag_editing {
+        vec![
+            Span::styled("  Tag edit  ", Style::default().fg(Color::Yellow)),
+            Span::styled("[Enter] save  [Esc] cancel  [Backspace] delete char", Style::default().fg(Color::DarkGray)),
+        ]
+    } else if app.detail_open.is_some() {
         vec![
             Span::styled("  [Esc] back  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[t] tag  ", Style::default().fg(Color::DarkGray)),
             Span::styled("[c] copy path  ", Style::default().fg(Color::DarkGray)),
             Span::styled("[q] quit", Style::default().fg(Color::DarkGray)),
         ]

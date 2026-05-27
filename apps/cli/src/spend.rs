@@ -1,7 +1,7 @@
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Datelike, Duration, Local, NaiveDate};
 use std::collections::HashMap;
 
-use crate::models::{ClaudeSession, DailySpend, ModelSpend, ProjectSpend, SpendSummary};
+use crate::models::{ClaudeSession, DailySpend, ModelSpend, MonthlyForecast, ProjectSpend, SpendSummary};
 
 /// Compute today / week / month spend buckets from per-turn daily cost attribution.
 pub fn compute_spend(sessions: &[ClaudeSession]) -> SpendSummary {
@@ -112,6 +112,44 @@ pub fn compute_project_breakdown(sessions: &[ClaudeSession]) -> Vec<ProjectSpend
         .collect();
     result.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
     result
+}
+
+/// Compute monthly cost forecast from 7-day rolling average.
+pub fn compute_monthly_forecast(sessions: &[ClaudeSession]) -> MonthlyForecast {
+    let today = Local::now().date_naive();
+
+    // 7-day rolling average (last 7 calendar days including today)
+    let cutoff7 = today - Duration::days(6);
+    let total7: f64 = sessions.iter()
+        .flat_map(|s| s.daily_costs.iter())
+        .filter(|(&d, _)| d >= cutoff7 && d <= today)
+        .map(|(_, &c)| c)
+        .sum();
+    let avg_per_day_7d = total7 / 7.0;
+
+    // Month-to-date
+    let month_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
+        .unwrap_or(today);
+    let month_to_date: f64 = sessions.iter()
+        .flat_map(|s| s.daily_costs.iter())
+        .filter(|(&d, _)| d >= month_start && d <= today)
+        .map(|(_, &c)| c)
+        .sum();
+
+    // Days in current month
+    let days_elapsed   = (today - month_start).num_days() as u32 + 1;
+    let next_month     = if today.month() == 12 {
+        NaiveDate::from_ymd_opt(today.year() + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1)
+    }.unwrap_or(today);
+    let days_in_month  = (next_month - month_start).num_days() as u32;
+    let days_remaining = days_in_month.saturating_sub(days_elapsed);
+
+    let projected_eom    = month_to_date + avg_per_day_7d * days_remaining as f64;
+    let projected_annual = avg_per_day_7d * 365.0;
+
+    MonthlyForecast { avg_per_day_7d, month_to_date, days_elapsed, days_remaining, projected_eom, projected_annual }
 }
 
 /// Model breakdown sorted by total cost desc.

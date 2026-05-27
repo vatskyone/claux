@@ -2,4 +2,6 @@ pub mod status;
 pub mod sessions;
 pub mod spend;
 pub mod analytics;
+pub mod export;
+pub mod tag;
 pub mod tui;

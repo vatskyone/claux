@@ -51,6 +51,9 @@ pub struct ClaudeSession {
     /// Absolute path to the source JSONL file (used for agent parsing).
     #[serde(skip)]
     pub jsonl_path:     PathBuf,
+    /// User-assigned tag label (loaded from ~/.claude/claux/tags.json).
+    #[serde(skip)]
+    pub tag:            Option<String>,
 }
 
 impl ClaudeSession {
@@ -191,4 +194,20 @@ pub struct ModelSpend {
     pub display_name:  String,
     pub total_cost:    f64,
     pub session_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MonthlyForecast {
+    /// Average daily spend over the last 7 days.
+    pub avg_per_day_7d:   f64,
+    /// Cumulative spend since the 1st of the current calendar month.
+    pub month_to_date:    f64,
+    /// Calendar days elapsed this month (including today).
+    pub days_elapsed:     u32,
+    /// Calendar days remaining this month (excluding today).
+    pub days_remaining:   u32,
+    /// Projected total for the current month at the 7-day pace.
+    pub projected_eom:    f64,
+    /// Projected spend over 365 days at the 7-day pace.
+    pub projected_annual: f64,
 }

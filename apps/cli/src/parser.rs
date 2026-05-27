@@ -280,6 +280,7 @@ pub fn parse_session(path: &Path, active_ids: &HashSet<String>, is_recent: bool)
         claudemd_score,
         daily_costs,
         jsonl_path: path.to_path_buf(),
+        tag: None,
     })
 }
 
