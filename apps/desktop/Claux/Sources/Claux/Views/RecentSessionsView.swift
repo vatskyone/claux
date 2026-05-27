@@ -5,6 +5,7 @@ struct RecentSessionsView: View {
     let onSelect: (ClaudeSession) -> Void
 
     @State private var searchText: String = ""
+    @FocusState private var isSearchFocused: Bool
 
     // Filter by AI title OR raw project path (case-insensitive).
     private var filteredSessions: [ClaudeSession] {
@@ -47,7 +48,7 @@ struct RecentSessionsView: View {
             // ── Search field ──────────────────────────────────────────────────
             // Shown once there are at least 2 sessions to search through.
             if sessions.count >= 2 {
-                SessionSearchField(text: $searchText)
+                searchBar
             }
 
             // ── Session list or empty state ───────────────────────────────────
@@ -57,6 +58,57 @@ struct RecentSessionsView: View {
                 sessionList(filteredSessions)
             }
         }
+    }
+
+    // MARK: – Search bar
+    // Default: icon + placeholder text centered in the capsule.
+    // Active (focused or text entered): icon slides left, cursor appears.
+
+    private var searchBar: some View {
+        ZStack {
+            // Centered idle state (icon + placeholder together)
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                Text("Search sessions…")
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Color.secondary)
+            .opacity(isSearchFocused || !searchText.isEmpty ? 0 : 1)
+
+            // Active state: icon on left, text field
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.secondary)
+                TextField("", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .focused($isSearchFocused)
+                Spacer(minLength: 0)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        isSearchFocused = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .opacity(isSearchFocused || !searchText.isEmpty ? 1 : 0)
+        }
+        .frame(height: 26)
+        .background(.regularMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
+        .contentShape(Capsule())
+        .onTapGesture { isSearchFocused = true }
+        .animation(.easeInOut(duration: 0.18), value: isSearchFocused)
+        .animation(.easeInOut(duration: 0.18), value: searchText.isEmpty)
     }
 
     // MARK: – Session list
@@ -114,38 +166,3 @@ struct RecentSessionsView: View {
     }
 }
 
-// MARK: – Native macOS search field
-// Wraps NSSearchField so we get the built-in magnifying-glass icon and
-// the clear (×) button that SwiftUI's plain TextField doesn't provide.
-private struct SessionSearchField: NSViewRepresentable {
-    @Binding var text: String
-
-    func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
-        field.placeholderString = "Search sessions…"
-        field.delegate = context.coordinator
-        field.controlSize = .small
-        field.focusRingType = .none
-        return field
-    }
-
-    func updateNSView(_ field: NSSearchField, context: Context) {
-        // Sync state back from SwiftUI (e.g. programmatic clear) without
-        // triggering an infinite loop on every keystroke.
-        if field.stringValue != text {
-            field.stringValue = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
-
-    class Coordinator: NSObject, NSSearchFieldDelegate {
-        @Binding var text: String
-        init(text: Binding<String>) { _text = text }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let field = notification.object as? NSSearchField else { return }
-            text = field.stringValue
-        }
-    }
-}

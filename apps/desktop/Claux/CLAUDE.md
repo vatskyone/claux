@@ -105,4 +105,4 @@ The raw `swift build` binary is useful for fast compile-error checks but lacks a
 
 ---
 
-## Current version: 1.5.3
+## Current version: 1.5.4

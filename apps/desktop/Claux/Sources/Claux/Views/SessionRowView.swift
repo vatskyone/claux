@@ -11,11 +11,6 @@ struct SessionRowView: View {
         Button { onSelect(session) } label: {
             HStack(spacing: 10) {
 
-                // Status dot
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 6, height: 6)
-
                 // Left: title/path + metadata
                 VStack(alignment: .leading, spacing: 2) {
                     // Prefer AI-generated title; fall back to display path
@@ -110,11 +105,4 @@ struct SessionRowView: View {
         }
     }
 
-    private var dotColor: Color {
-        if session.isActive { return Color(nsColor: .systemGreen) }
-        let hoursAgo = -session.startTime.timeIntervalSinceNow / 3600
-        if hoursAgo < 6  { return Color(nsColor: .systemBlue) }
-        if hoursAgo < 24 { return Color(nsColor: .secondaryLabelColor) }
-        return Color(nsColor: .tertiaryLabelColor)
-    }
 }

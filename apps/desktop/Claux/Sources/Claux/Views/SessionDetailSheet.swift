@@ -135,7 +135,8 @@ struct SessionDetailSheet: View {
             .padding(.vertical, 10)
         }
         // Full 340-width to match the popover — the overlay in PopoverView sets the frame
-        .background(.thickMaterial)
+        // withinWindow blending frosts the popover content behind the sheet — true native blur.
+        .background(VisualEffectView(material: .sidebar, blendingMode: .withinWindow))
     }
 
     // MARK: – Sub-views

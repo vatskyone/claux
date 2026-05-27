@@ -2,6 +2,17 @@
 
 ---
 
+## [1.5.4] — 2026-05-27
+
+### Improvements
+- **SessionDetailSheet native blur** (`SessionDetailSheet.swift`) — replaced `.thickMaterial` with `VisualEffectView(.withinWindow)` so the detail overlay frosts the popover content behind it for a true layered-glass look.
+- **Settings form transparent rows** (`SettingsView.swift`) — applied `.listRowBackground(Color.clear)` to all form sections so the sidebar blur shows through every row, eliminating the white opaque row backgrounds.
+- **Session row: removed status dot** (`SessionRowView.swift`) — dropped the colored `Circle()` indicator from session rows to reclaim space and left-align text flush with the other list items.
+- **Centered capsule search bar** (`RecentSessionsView.swift`) — replaced `NSSearchField` wrapper with a native SwiftUI capsule search bar: magnifier icon + placeholder centered when idle, slides left on focus with a clear button; fully rounded corners for a smoother look.
+- **Active session timer color** (`ActiveSessionCard.swift`) — session duration at top-right now uses `systemGray` instead of `tertiaryLabel` for better legibility over the blur background.
+
+---
+
 ## [1.5.3] — 2026-05-27
 
 ### Improvements

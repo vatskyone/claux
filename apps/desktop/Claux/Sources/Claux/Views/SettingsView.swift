@@ -140,6 +140,7 @@ struct SettingsView: View {
             } header: {
                 Label("General", systemImage: "gearshape")
             }
+            .listRowBackground(Color.clear)
 
             // ── Notifications ─────────────────────────────────────────────────
             Section {
@@ -238,6 +239,7 @@ struct SettingsView: View {
             } header: {
                 Label("Notifications", systemImage: "bell")
             }
+            .listRowBackground(Color.clear)
 
             // ── Data Source ───────────────────────────────────────────────────
             Section {
@@ -285,6 +287,7 @@ struct SettingsView: View {
             } header: {
                 Label("Data Source", systemImage: "folder")
             }
+            .listRowBackground(Color.clear)
 
             // ── Account ───────────────────────────────────────────────────────
             Section {
@@ -354,6 +357,7 @@ struct SettingsView: View {
             } header: {
                 Label("Account", systemImage: "person.circle")
             }
+            .listRowBackground(Color.clear)
 
             // ── About ─────────────────────────────────────────────────────────
             Section {
@@ -390,6 +394,7 @@ struct SettingsView: View {
             } header: {
                 Label("About", systemImage: "info.circle")
             }
+            .listRowBackground(Color.clear)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)  // let the VisualEffectView blur show through

@@ -45,7 +45,7 @@ struct ActiveSessionCard: View {
 
                 Text(Format.duration(session.duration))
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .foregroundStyle(Color(nsColor: .systemGray))
             }
             .padding(.horizontal, 2)
 
