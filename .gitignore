@@ -32,5 +32,8 @@ dist/
 .next/
 *.local
 
+# Rust / Cargo
+apps/cli/target/
+
 # Misc
 *.log
