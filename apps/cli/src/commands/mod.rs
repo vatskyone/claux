@@ -5,3 +5,6 @@ pub mod analytics;
 pub mod export;
 pub mod tag;
 pub mod tui;
+pub mod account;
+pub mod skills;
+pub mod config;

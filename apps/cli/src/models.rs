@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -160,6 +160,64 @@ pub fn agent_level(total_tasks: usize) -> (u8, f64) {
         30..=59 => (4, (total_tasks - 30) as f64 / 30.0),
         _       => (5, 1.0),
     }
+}
+
+// ── Account / plan info (from ~/.claude.json) ─────────────────────────────────
+
+#[derive(Debug, Clone, Default)]
+pub struct AccountInfo {
+    pub display_name:    String,
+    pub email:           String,
+    pub plan_type:       String,
+    pub org_name:        String,
+    pub org_role:        String,
+    pub billing_type:    String,
+    pub account_created: String,
+    pub sub_created:     Option<String>,
+    pub rate_limit_tier: String,
+    pub has_extra_usage: bool,
+}
+
+// ── CLAUDE.md detailed analysis ───────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ClaudemdAnalysis {
+    pub score:            u8,
+    pub word_count:       usize,
+    pub heading_count:    usize,
+    pub has_build:        bool,
+    pub has_tests:        bool,
+    pub has_run:          bool,
+    pub has_structure:    bool,
+    pub has_conventions:  bool,
+    pub has_workflow:     bool,
+    pub has_commands:     bool,
+    pub has_important:    bool,
+    pub suggestions:      Vec<&'static str>,
+}
+
+// ── Skill info ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SkillSource { Builtin, Custom }
+
+#[derive(Debug, Clone)]
+pub struct SkillInfo {
+    pub name:         String,
+    pub source:       SkillSource,
+    pub description:  Option<String>,
+    pub usage_count:  usize,
+    pub last_used_ms: Option<u64>,
+    pub rating:       u8,
+    pub content:      Option<String>,
+}
+
+// ── User-configurable budget limits ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClauxConfig {
+    pub weekly_budget_usd:  Option<f64>,
+    pub monthly_credit_usd: Option<f64>,
 }
 
 // ── Aggregate / summary structs ───────────────────────────────────────────────

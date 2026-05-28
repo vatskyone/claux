@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::models::{AgentRun, ClaudeSession, TokenUsage, compute_quality_score};
+use crate::models::{AgentRun, ClaudeSession, ClaudemdAnalysis, TokenUsage, compute_quality_score};
 
 // ── Pricing table ($ per million tokens) ─────────────────────────────────────
 
@@ -89,6 +89,128 @@ fn score_claudemd(content: &str) -> u8 {
 
     let total = (length_score + structure_score + content_score).min(100);
     total as u8
+}
+
+/// Detailed CLAUDE.md analysis — same scoring as `score_claudemd` but returns a struct.
+pub fn score_claudemd_detailed(content: &str) -> ClaudemdAnalysis {
+    let word_count: usize = content.split_whitespace().count();
+
+    let mut heading_count = 0usize;
+    let mut code_delimiters = 0u32;
+    let mut bullets = 0u32;
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with('#')   { heading_count += 1; }
+        if t.starts_with("```") { code_delimiters += 1; }
+        if t.starts_with("- ") || t.starts_with("* ") { bullets += 1; }
+    }
+
+    let lower = content.to_lowercase();
+    let has_build       = ["build", "compile", "swift build", "npm run", "yarn", "make ", "gradle", "cmake"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_tests       = ["test", "pytest", "jest ", "xcode test", "unit test", "spec"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_run         = ["run ", "start ", "launch", "execute", "serve"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_structure   = ["structure", "architecture", "layout", "directory", "folder", "project"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_conventions = ["convention", "style guide", "pattern", "naming", "format", "lint"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_important   = ["important", "note:", "warning", "do not", "never ", "always ", "avoid"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_commands    = ["command", "script", "bash", "shell", "cli"]
+        .iter().any(|kw| lower.contains(kw));
+    let has_workflow    = ["workflow", "process", "step", "instruction", "guideline"]
+        .iter().any(|kw| lower.contains(kw));
+
+    let length_score: u32 = if word_count >= 300 { 30 }
+        else if word_count >= 150 { 23 }
+        else if word_count >= 80  { 16 }
+        else if word_count >= 30  {  8 }
+        else                      {  0 };
+
+    let structure_score = (heading_count as u32 * 5).min(15)
+        + ((code_delimiters / 2) * 5).min(10)
+        + (bullets / 4).min(5);
+
+    let content_score: u32 = [
+        has_build, has_tests, has_run, has_structure,
+        has_conventions, has_important, has_commands, has_workflow,
+    ].iter().map(|&b| if b { 5u32 } else { 0 }).sum();
+
+    let score = (length_score + structure_score + content_score).min(100) as u8;
+
+    // Build suggestions (most impactful first, cap at 4)
+    let mut suggestions: Vec<&'static str> = Vec::new();
+    if !has_build       { suggestions.push("Add build/compile commands"); }
+    if !has_tests       { suggestions.push("Add test instructions"); }
+    if !has_run         { suggestions.push("Add run/launch instructions"); }
+    if !has_commands    { suggestions.push("Add common command examples"); }
+    if !has_structure   { suggestions.push("Describe project structure"); }
+    if !has_conventions { suggestions.push("Document coding conventions"); }
+    if word_count < 80  { suggestions.push("Expand content (too brief)"); }
+    if heading_count == 0 { suggestions.push("Add section headings (#)"); }
+    suggestions.truncate(4);
+
+    ClaudemdAnalysis {
+        score,
+        word_count,
+        heading_count,
+        has_build,
+        has_tests,
+        has_run,
+        has_structure,
+        has_conventions,
+        has_workflow,
+        has_commands,
+        has_important,
+        suggestions,
+    }
+}
+
+/// Walk up from `project_path` (same logic as `find_claudemd`) but return the path.
+pub fn find_claudemd_path(project_path: &str) -> Option<std::path::PathBuf> {
+    let start = Path::new(project_path);
+    let home = dirs::home_dir();
+
+    let mut dir = start.to_path_buf();
+    for _ in 0..8 {
+        let candidate = dir.join("CLAUDE.md");
+        if candidate.exists() {
+            if let Ok(meta) = fs::metadata(&candidate) {
+                if meta.len() >= 10 { return Some(candidate); }
+            }
+        }
+        if home.as_deref() == Some(&dir) { break; }
+        if !dir.pop() { break; }
+    }
+
+    let mut queue: Vec<(std::path::PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
+    while let Some((cur, depth)) = queue.first().cloned() {
+        queue.remove(0);
+        if depth > 4 { continue; }
+        let candidate = cur.join("CLAUDE.md");
+        if candidate.exists() {
+            if let Ok(meta) = fs::metadata(&candidate) {
+                if meta.len() >= 10 { return Some(candidate); }
+            }
+        }
+        if depth < 4 {
+            if let Ok(entries) = fs::read_dir(&cur) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let name = entry.file_name();
+                        let name_str = name.to_string_lossy();
+                        if !name_str.starts_with('.') && !JUNK_DIRS.contains(&name_str.as_ref()) {
+                            queue.push((path, depth + 1));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn find_claudemd(project_path: &str) -> Option<u8> {

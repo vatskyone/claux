@@ -1,9 +1,12 @@
+mod account;
 mod commands;
+mod config;
 mod format;
 mod models;
 mod monitor;
 mod parser;
 mod render;
+mod skills;
 mod spend;
 mod tags;
 
@@ -12,6 +15,8 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
 use commands::export::ExportFormat;
+use commands::skills::SkillsAction;
+use commands::config::ConfigAction;
 use monitor::{load_sessions, SessionCache};
 
 #[derive(Parser)]
@@ -91,6 +96,27 @@ enum Commands {
         remove: bool,
     },
 
+    /// Show account, plan, and skill usage information.
+    Account,
+
+    /// Manage CLAUX skills (list, export, import, new).
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
+
+    /// Get or set CLAUX configuration values.
+    ///
+    /// Keys: weekly-budget (USD), monthly-credit (USD)
+    /// Examples:
+    ///   claux config set weekly-budget 50
+    ///   claux config get weekly-budget
+    ///   claux config unset weekly-budget
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+
     /// Launch the live TUI dashboard (press q to quit, r to refresh).
     Tui,
 
@@ -118,6 +144,17 @@ fn main() -> Result<()> {
         return commands::tui::run();
     }
 
+    // Account and skills don't need session loading.
+    if let Commands::Account = &command {
+        return commands::account::run();
+    }
+    if let Commands::Skills { action } = &command {
+        return commands::skills::run(action);
+    }
+    if let Commands::Config { action } = &command {
+        return commands::config::run(action);
+    }
+
     // For all other commands, load sessions once.
     let mut cache = SessionCache::new();
     let sessions  = load_sessions(&mut cache);
@@ -141,7 +178,8 @@ fn main() -> Result<()> {
         Commands::Tag { session, label, remove } => {
             commands::tag::run(&sessions, &session, label.as_deref(), remove)?;
         }
-        Commands::Tui | Commands::Completions { .. } => unreachable!(),
+        Commands::Tui | Commands::Completions { .. } |
+        Commands::Account | Commands::Skills { .. } | Commands::Config { .. } => unreachable!(),
     }
 
     Ok(())

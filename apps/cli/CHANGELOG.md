@@ -2,6 +2,50 @@
 
 ---
 
+## [0.6.0] — 2026-05-28
+
+### Dashboard — CLAUDE.md & context quality in Insights
+
+- **CLAUDE.md quality row** added to Insights panel when a session is active: score `82/100` with a `█░` bar, color-coded Good/Fair/Weak label (Green ≥70, Yellow ≥40, Red <40)
+- **Context quality grade** (A–D) added below: A = cache ≥ 60% AND fill < 75%; D = fill ≥ 90%; shows raw percentages alongside
+
+### Dashboard — Usage panel
+
+- **New Usage panel** below the Tokens panel:
+  - Context window bar + `XX%  XXk/200k`
+  - This week spend (optional budget bar via `claux config set weekly-budget N`) + reset date
+  - Credit status (disabled / enabled with monthly spend vs cap)
+
+### Sessions tab — "Dur" → "Time"
+
+- Column header renamed from `Dur` to `Time`.
+
+### Session detail — richer quality insights
+
+- **Source row** added: `VSCode Extension` / `Terminal CLI` / `Desktop App` / `JetBrains Plugin` from `entrypoint` field
+- **Detailed CLAUDE.md block**: score + bar + label, `✓`/`✗` per category (Build, Tests, Run, Structure, Conventions, Commands), up to 4 actionable suggestions
+
+### Skills tab
+
+- **5th TUI tab** with skill list (top 40%) and detail panel (bottom 60%)
+- Seeded from `skillUsage` in `~/.claude.json` + `~/.claude/skills/` for custom skills
+- Rating: 0=★, 1-2=★★, 3-9=★★★, 10-29=★★★★, 30+=★★★★★
+
+### New CLI commands
+
+- **`claux account`** — account card (name, email, plan, org, billing, sub dates, credit) + skill usage table
+- **`claux skills list|new|export|import`** — skill management
+- **`claux config get|set|unset <key>`** — budget limits (`weekly-budget`, `monthly-credit` in USD); stored in `~/.claude/claux/config.json`
+
+### Internal
+
+- New `src/account.rs`, `src/skills.rs`, `src/config.rs` data-layer modules
+- New structs in `models.rs`: `AccountInfo`, `ClaudemdAnalysis`, `SkillInfo`, `SkillSource`, `ClauxConfig`
+- `parser.rs`: added `score_claudemd_detailed()` and `find_claudemd_path()`
+- `App` extended with `account_info`, `claux_config`, `skills`, `skill_cursor`, `skills_dirty`, `detail_analysis`
+
+---
+
 ## [0.5.0] — 2026-05-27
 
 ### Session Export (`claux export`)

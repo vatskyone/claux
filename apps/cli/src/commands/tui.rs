@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Duration as ChronoDuration, Local, Timelike};
+use chrono::{Datelike, Duration as ChronoDuration, Local, Timelike};
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
@@ -18,10 +18,14 @@ use std::io;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crate::models::{AgentRun, ClaudeSession, agent_level};
+use crate::account::load_account_info;
+use crate::config::load_claux_config;
+use crate::models::{AccountInfo, AgentRun, ClaudeSession, ClaudemdAnalysis, ClauxConfig, SkillInfo, agent_level};
 use crate::monitor::{
     compute_agent_type_counts, load_agents_for_session, load_sessions, SessionCache,
 };
+use crate::parser::{find_claudemd_path, score_claudemd_detailed};
+use crate::skills::load_skills;
 use crate::spend::{
     compute_daily_spend, compute_model_breakdown, compute_monthly_forecast,
     compute_project_breakdown, compute_spend,
@@ -39,6 +43,7 @@ enum Tab {
     Sessions  = 1,
     Analytics = 2,
     Agents    = 3,
+    Skills    = 4,
 }
 
 impl Tab {
@@ -47,15 +52,17 @@ impl Tab {
             Tab::Dashboard => Tab::Sessions,
             Tab::Sessions  => Tab::Analytics,
             Tab::Analytics => Tab::Agents,
-            Tab::Agents    => Tab::Dashboard,
+            Tab::Agents    => Tab::Skills,
+            Tab::Skills    => Tab::Dashboard,
         }
     }
     fn prev(self) -> Tab {
         match self {
-            Tab::Dashboard => Tab::Agents,
+            Tab::Dashboard => Tab::Skills,
             Tab::Sessions  => Tab::Dashboard,
             Tab::Analytics => Tab::Sessions,
             Tab::Agents    => Tab::Analytics,
+            Tab::Skills    => Tab::Agents,
         }
     }
     fn label(self) -> &'static str {
@@ -64,6 +71,7 @@ impl Tab {
             Tab::Sessions  => "Sessions",
             Tab::Analytics => "Analytics",
             Tab::Agents    => "Agents",
+            Tab::Skills    => "Skills",
         }
     }
 }
@@ -79,14 +87,22 @@ struct App {
     analytics_scroll:  usize,
     // Session detail overlay
     detail_open:       Option<usize>,
+    detail_analysis:   Option<ClaudemdAnalysis>,
     // Agents tab
     agents:             Vec<AgentRun>,
     agent_cursor:       usize,
     agent_type_counts:  HashMap<String, usize>,
     agent_counts_dirty: bool,
+    // Skills tab
+    skills:             Vec<SkillInfo>,
+    skill_cursor:       usize,
+    skills_dirty:       bool,
     // Tag editing (inside session detail overlay)
     tag_editing:        bool,
     tag_input_buf:      String,
+    // Account / config (loaded once)
+    account_info:       Option<AccountInfo>,
+    claux_config:       ClauxConfig,
     // Shared data
     sessions:           Vec<ClaudeSession>,
     cache:              SessionCache,
@@ -103,12 +119,18 @@ impl App {
             session_scroll:    0,
             analytics_scroll:  0,
             detail_open:        None,
+            detail_analysis:    None,
             agents:             vec![],
             agent_cursor:       0,
             agent_type_counts:  HashMap::new(),
             agent_counts_dirty: true,
+            skills:             vec![],
+            skill_cursor:       0,
+            skills_dirty:       true,
             tag_editing:        false,
             tag_input_buf:      String::new(),
+            account_info:       load_account_info(),
+            claux_config:       load_claux_config(),
             sessions,
             cache,
             last_refresh: Instant::now(),
@@ -123,7 +145,18 @@ impl App {
         if self.tab == Tab::Agents {
             self.reload_agents();
         }
+        if self.tab == Tab::Skills {
+            self.reload_skills();
+        }
         self.last_refresh = Instant::now();
+    }
+
+    fn reload_skills(&mut self) {
+        self.skills = load_skills();
+        if self.skill_cursor >= self.skills.len() && !self.skills.is_empty() {
+            self.skill_cursor = self.skills.len() - 1;
+        }
+        self.skills_dirty = false;
     }
 
     fn reload_agents(&mut self) {
@@ -253,11 +286,13 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
             app.tab = app.tab.next();
             app.analytics_scroll = 0;
             if app.tab == Tab::Agents { app.reload_agents(); }
+            if app.tab == Tab::Skills && app.skills_dirty { app.reload_skills(); }
         }
         (KeyCode::Left, _) | (KeyCode::Char('h'), _) => {
             app.tab = app.tab.prev();
             app.analytics_scroll = 0;
             if app.tab == Tab::Agents { app.reload_agents(); }
+            if app.tab == Tab::Skills && app.skills_dirty { app.reload_skills(); }
         }
 
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
@@ -275,6 +310,9 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                 }
                 Tab::Agents => {
                     if app.agent_cursor > 0 { app.agent_cursor -= 1; }
+                }
+                Tab::Skills => {
+                    if app.skill_cursor > 0 { app.skill_cursor -= 1; }
                 }
                 Tab::Dashboard => {}
             }
@@ -296,13 +334,23 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                     let max = app.agents.len().saturating_sub(1);
                     if app.agent_cursor < max { app.agent_cursor += 1; }
                 }
+                Tab::Skills => {
+                    let max = app.skills.len().saturating_sub(1);
+                    if app.skill_cursor < max { app.skill_cursor += 1; }
+                }
                 Tab::Dashboard => {}
             }
         }
 
         (KeyCode::Enter, _) => {
             if app.tab == Tab::Sessions && !app.sessions.is_empty() {
-                app.detail_open = Some(app.session_cursor);
+                let idx = app.session_cursor;
+                app.detail_open = Some(idx);
+                // Pre-compute CLAUDE.md detailed analysis for this session
+                app.detail_analysis = app.sessions.get(idx)
+                    .and_then(|s| find_claudemd_path(&s.project_path))
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .map(|c| score_claudemd_detailed(&c));
             }
         }
 
@@ -332,13 +380,14 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Sessions  => draw_sessions_screen(f, chunks[1], app),
         Tab::Analytics => draw_analytics_screen(f, chunks[1], app),
         Tab::Agents    => draw_agents_screen(f, chunks[1], app),
+        Tab::Skills    => draw_skills_screen(f, chunks[1], app),
     }
 
     draw_footer(f, chunks[2], app);
 
     if let Some(idx) = app.detail_open {
         if let Some(session) = app.sessions.get(idx) {
-            draw_detail_overlay(f, area, session, app.tag_editing, &app.tag_input_buf);
+            draw_detail_overlay(f, area, session, app.tag_editing, &app.tag_input_buf, app.detail_analysis.as_ref());
         }
     }
 }
@@ -351,7 +400,7 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, app: &App) {
 
     let mut spans = vec![Span::styled("  CLAUX  ", Style::default().fg(Color::DarkGray))];
 
-    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics, Tab::Agents] {
+    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics, Tab::Agents, Tab::Skills] {
         let is_selected = app.tab == tab;
         let label = match tab {
             Tab::Dashboard if has_active        => format!("  ● {}  ", tab.label()),
@@ -405,7 +454,13 @@ fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
         .split(chunks[1]);
 
-    draw_token_breakdown(f, mid[0], active);
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(mid[0]);
+
+    draw_token_breakdown(f, left_chunks[0], active);
+    draw_usage_panel(f, left_chunks[1], active, &app.sessions, &app.claux_config, app.account_info.as_ref());
     draw_insights_panel(f, mid[1], active, &app.sessions);
 
     draw_spend_panel(f, chunks[2], &app.sessions);
@@ -1248,6 +1303,41 @@ fn draw_insights_panel(
             ]));
         }
 
+        // CLAUDE.md quality
+        if let Some(score) = s.claudemd_score {
+            lines.push(Line::from(""));
+            let sc = if score >= 70 { Color::Green } else if score >= 40 { Color::Yellow } else { Color::Red };
+            let bar_w = 10usize;
+            let filled = (score as usize * bar_w / 100).min(bar_w);
+            let label = if score >= 70 { "Good" } else if score >= 40 { "Fair" } else { "Weak" };
+            lines.push(Line::from(vec![
+                Span::styled("  CLAUDE.md ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{:>3}/100  ", score), Style::default().fg(sc).add_modifier(Modifier::BOLD)),
+                Span::styled("█".repeat(filled), Style::default().fg(sc)),
+                Span::styled("░".repeat(bar_w - filled), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("  {}", label), Style::default().fg(sc)),
+            ]));
+        }
+
+        // Context quality grade (combines cache efficiency + fill)
+        {
+            let grade = if cache_pct >= 60.0 && ctx_pct < 75.0 { "A" }
+                else if cache_pct >= 30.0 && ctx_pct < 90.0     { "B" }
+                else if ctx_pct >= 90.0                         { "D" }
+                else                                             { "C" };
+            let grade_col = match grade {
+                "A" => Color::Green,
+                "B" => Color::Cyan,
+                "C" => Color::Yellow,
+                _   => Color::Red,
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  Context q.", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" {}  ", grade), Style::default().fg(grade_col).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("cache {:.0}%  fill {:.0}%", cache_pct, ctx_pct), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
     } else {
         let total_sess     = all.len();
         let lifetime_cost: f64 = all.iter().map(|s| s.total_cost).sum();
@@ -1519,7 +1609,7 @@ fn draw_sessions_list(
             Row::new(vec![
                 Cell::from(""),
                 Cell::from("When"),
-                Cell::from("Dur"),
+                Cell::from("Time"),
                 Cell::from("Model"),
                 Cell::from(format!("Session{}", hint)),
                 Cell::from("Tag"),
@@ -1552,6 +1642,7 @@ fn draw_detail_overlay(
     s: &ClaudeSession,
     tag_editing: bool,
     tag_input: &str,
+    analysis: Option<&ClaudemdAnalysis>,
 ) {
     let popup = centered_rect(80, 85, area);
     f.render_widget(Clear, popup);
@@ -1573,6 +1664,14 @@ fn draw_detail_overlay(
     let cache_pct   = format!("{:.0}%", s.token_usage.cache_hit_rate() * 100.0);
     let ctx_color   = context_color(s.context_health_fraction());
 
+    let source_str = match s.entrypoint.as_deref() {
+        Some("claude-vscode")     => "VSCode Extension",
+        Some("cli")               => "Terminal CLI",
+        Some("claude-desktop")    => "Desktop App",
+        Some("claude-jetbrains")  => "JetBrains Plugin",
+        _                         => "—",
+    };
+
     let mut lines: Vec<Line> = vec![
         Line::from(vec![
             Span::styled(s.display_path(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -1593,6 +1692,10 @@ fn draw_detail_overlay(
             Span::raw("   "),
             stat_span("Cache hit", &cache_pct, Color::DarkGray),
         ]),
+        Line::from(vec![
+            Span::styled("Source    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(source_str, Style::default().fg(Color::White)),
+        ]),
         Line::from(""),
         Line::from(Span::styled("Tokens", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))),
         token_line("Input",       s.token_usage.input_tokens,       Color::White),
@@ -1605,8 +1708,54 @@ fn draw_detail_overlay(
         lines.push(token_line("Thinking", s.token_usage.thinking_tokens, Color::Magenta));
     }
 
-    if let Some(score) = s.claudemd_score {
-        lines.push(Line::from(""));
+    // Detailed CLAUDE.md block
+    lines.push(Line::from(""));
+    if let Some(a) = analysis {
+        let sc = if a.score >= 70 { Color::Green } else if a.score >= 40 { Color::Yellow } else { Color::Red };
+        let label = if a.score >= 70 { "Good" } else if a.score >= 40 { "Fair" } else { "Weak" };
+        let bar_w = 8usize;
+        let filled = (a.score as usize * bar_w / 100).min(bar_w);
+        lines.push(Line::from(vec![
+            Span::styled("CLAUDE.md  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{:>3}/100  ", a.score), Style::default().fg(sc).add_modifier(Modifier::BOLD)),
+            Span::styled("█".repeat(filled), Style::default().fg(sc)),
+            Span::styled("░".repeat(bar_w - filled), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("  {}", label), Style::default().fg(sc)),
+        ]));
+
+        // Category check row
+        let checks: Vec<(&str, bool)> = vec![
+            ("Build", a.has_build), ("Tests", a.has_tests), ("Run", a.has_run),
+            ("Structure", a.has_structure), ("Conventions", a.has_conventions),
+            ("Commands", a.has_commands),
+        ];
+        let check_str: String = checks.iter()
+            .map(|(lbl, ok)| if *ok { format!("✓ {}  ", lbl) } else { format!("✗ {}  ", lbl) })
+            .collect();
+        let pass_spans: Vec<Span> = checks.iter().flat_map(|(lbl, ok)| {
+            let col = if *ok { Color::Green } else { Color::Red };
+            vec![
+                Span::styled(if *ok { "✓ " } else { "✗ " }, Style::default().fg(col)),
+                Span::styled(format!("{}  ", lbl), Style::default().fg(Color::DarkGray)),
+            ]
+        }).collect();
+        let _ = check_str; // suppress unused
+        let mut check_line = vec![Span::raw("  ")];
+        check_line.extend(pass_spans);
+        lines.push(Line::from(check_line));
+
+        // Suggestions
+        if !a.suggestions.is_empty() {
+            let tip = a.suggestions.iter()
+                .map(|s| *s)
+                .collect::<Vec<&str>>()
+                .join("  ·  ");
+            lines.push(Line::from(vec![
+                Span::styled("  → ", Style::default().fg(Color::DarkGray)),
+                Span::styled(tip, Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+    } else if let Some(score) = s.claudemd_score {
         let sc = if score >= 70 { Color::Green } else if score >= 40 { Color::Yellow } else { Color::Red };
         lines.push(Line::from(vec![
             Span::styled("CLAUDE.md  ", Style::default().fg(Color::DarkGray)),
@@ -1691,6 +1840,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             Tab::Sessions  => &[("[↑/↓] select  ", Color::DarkGray), ("[Enter] detail  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Analytics => &[("[↑/↓] scroll  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Agents    => &[("[↑/↓] select  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
+            Tab::Skills    => &[("[↑/↓] select  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
         };
         for (txt, col) in extra {
             v.push(Span::styled(*txt, Style::default().fg(*col)));
@@ -1699,6 +1849,301 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     };
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+// ── Usage panel (Dashboard left-bottom) ──────────────────────────────────────
+
+fn draw_usage_panel(
+    f: &mut Frame,
+    area: Rect,
+    session: Option<&ClaudeSession>,
+    all: &[ClaudeSession],
+    config: &ClauxConfig,
+    account: Option<&AccountInfo>,
+) {
+    let block = Block::default()
+        .title(" Usage ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let bar_w = (inner.width as usize).saturating_sub(30).max(6);
+    let mut lines: Vec<Line> = vec![];
+
+    // Context window
+    if let Some(s) = session {
+        let frac     = s.context_health_fraction();
+        let pct      = frac * 100.0;
+        let ctx_tok  = if s.token_usage.context_window_tokens > 0 {
+            s.token_usage.context_window_tokens
+        } else {
+            s.token_usage.total_context_tokens()
+        };
+        let filled   = (frac * bar_w as f64).round() as usize;
+        let empty    = bar_w.saturating_sub(filled);
+        let col      = context_color(frac);
+        lines.push(Line::from(vec![
+            Span::styled("  Context win  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("█".repeat(filled), Style::default().fg(col)),
+            Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("  {:>3.0}%  {}/200k", pct, format::tokens(ctx_tok)), Style::default().fg(Color::DarkGray)),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  Context win  (no active session)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    // Weekly spend
+    let today  = Local::now().date_naive();
+    let days_since_mon = today.weekday().num_days_from_monday() as i64;
+    let monday = today - ChronoDuration::days(days_since_mon);
+    let next_monday = monday + ChronoDuration::days(7);
+
+    let weekly: f64 = all.iter()
+        .flat_map(|s| s.daily_costs.iter())
+        .filter(|(d, _)| **d >= monday && **d <= today)
+        .map(|(_, c)| c)
+        .sum();
+
+    match config.weekly_budget_usd {
+        Some(budget) if budget > 0.0 => {
+            let frac   = (weekly / budget).min(1.0);
+            let filled = (frac * bar_w as f64).round() as usize;
+            let empty  = bar_w.saturating_sub(filled);
+            let col    = if frac >= 0.9 { Color::Red } else if frac >= 0.7 { Color::Yellow } else { Color::Green };
+            lines.push(Line::from(vec![
+                Span::styled("  This week    ", Style::default().fg(Color::DarkGray)),
+                Span::styled("█".repeat(filled), Style::default().fg(col)),
+                Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("  {}  / ${:.0}", format::cost(weekly), budget), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        _ => {
+            lines.push(Line::from(vec![
+                Span::styled("  This week    ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format::cost(weekly), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("  (no budget — claux config set weekly-budget N)", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("               resets {}", next_monday.format("Mon %Y-%m-%d")),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+
+    // Credit status
+    let credit_str = match account {
+        Some(a) if a.has_extra_usage => {
+            let monthly_now: f64 = all.iter()
+                .flat_map(|s| s.daily_costs.iter())
+                .filter(|(d, _)| d.year() == today.year() && d.month() == today.month())
+                .map(|(_, c)| c)
+                .sum();
+            match config.monthly_credit_usd {
+                Some(cap) => format!("{}  /  ${:.0} cap  ({:.0}%)", format::cost(monthly_now), cap, monthly_now / cap * 100.0),
+                None      => format!("enabled  ({} this month)", format::cost(monthly_now)),
+            }
+        }
+        _ => "disabled".to_string(),
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Credit       ", Style::default().fg(Color::DarkGray)),
+        Span::styled(credit_str, Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let h = lines.len().min(inner.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines), Rect { height: h, ..inner });
+}
+
+// ── Skills screen ─────────────────────────────────────────────────────────────
+
+fn draw_skills_screen(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+    draw_skill_list(f, chunks[0], app);
+    draw_skill_detail(f, chunks[1], app);
+}
+
+fn draw_skill_list(f: &mut Frame, area: Rect, app: &App) {
+    let skills  = &app.skills;
+    let custom  = skills.iter().filter(|s| s.source == crate::models::SkillSource::Custom).count();
+    let builtin = skills.len() - custom;
+
+    let title = format!(" Skills ── {} total · {} custom · {} built-in ", skills.len(), custom, builtin);
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if skills.is_empty() {
+        f.render_widget(
+            Paragraph::new("  No skills found — use 'claux skills new <name>' to create one")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
+    let widths = [
+        Constraint::Length(2),
+        Constraint::Length(18),
+        Constraint::Length(8),
+        Constraint::Length(6),
+        Constraint::Length(12),
+        Constraint::Length(6),
+    ];
+
+    let rows: Vec<Row> = skills.iter().enumerate()
+        .take(inner.height as usize)
+        .map(|(idx, skill)| {
+            let is_selected = idx == app.skill_cursor;
+            let dot  = if skill.source == crate::models::SkillSource::Custom { "●" } else { "○" };
+            let dot_col = if skill.source == crate::models::SkillSource::Custom { Color::Cyan } else { Color::DarkGray };
+            let kind = if skill.source == crate::models::SkillSource::Custom { "custom" } else { "builtin" };
+            let last = skill.last_used_ms
+                .map(|ms| {
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let secs = (now_ms.saturating_sub(ms)) / 1_000;
+                    if secs < 3_600       { format!("{}m ago", secs / 60) }
+                    else if secs < 86_400 { format!("{}h ago", secs / 3_600) }
+                    else                  { format!("{}d ago", secs / 86_400) }
+                })
+                .unwrap_or_else(|| "never".to_string());
+
+            Row::new(vec![
+                Cell::from(dot).style(Style::default().fg(dot_col)),
+                Cell::from(skill.name.clone()),
+                Cell::from(kind).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(skill.usage_count.to_string()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(last).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(stars(skill.rating)).style(quality_style(skill.rating)),
+            ])
+            .style(if is_selected { Style::default().bg(Color::DarkGray) } else { Style::default() })
+        })
+        .collect();
+
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from("Skill"),
+                Cell::from("Type"),
+                Cell::from("Uses"),
+                Cell::from("Last used"),
+                Cell::from("Rating"),
+            ])
+            .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        )
+        .column_spacing(1);
+
+    f.render_widget(table, inner);
+}
+
+fn draw_skill_detail(f: &mut Frame, area: Rect, app: &App) {
+    let selected = app.skills.get(app.skill_cursor);
+
+    let title = selected
+        .map(|s| format!(" {} ", s.name))
+        .unwrap_or_else(|| " Detail ".to_string());
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(skill) = selected else {
+        f.render_widget(
+            Paragraph::new("  Select a skill above with ↑/↓")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    };
+
+    let kind = if skill.source == crate::models::SkillSource::Custom { "Custom" } else { "Built-in" };
+    let kind_col = if skill.source == crate::models::SkillSource::Custom { Color::Cyan } else { Color::DarkGray };
+
+    let last_str = skill.last_used_ms
+        .map(|ms| {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let secs = (now_ms.saturating_sub(ms)) / 1_000;
+            if secs < 3_600       { format!("{}m ago", secs / 60) }
+            else if secs < 86_400 { format!("{}h ago", secs / 3_600) }
+            else                  { format!("{}d ago", secs / 86_400) }
+        })
+        .unwrap_or_else(|| "never".to_string());
+
+    let mut lines: Vec<Line> = vec![];
+
+    lines.push(Line::from(vec![
+        Span::styled("  Name      ", Style::default().fg(Color::DarkGray)),
+        Span::styled(skill.name.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::raw("  "),
+        Span::styled(format!("[{}]", kind), Style::default().fg(kind_col)),
+    ]));
+    lines.push(Line::from(""));
+
+    if let Some(desc) = &skill.description {
+        let max_w = (inner.width as usize).saturating_sub(14).max(10);
+        let d = if desc.len() > max_w { format!("{}…", desc.chars().take(max_w - 1).collect::<String>()) } else { desc.clone() };
+        lines.push(Line::from(vec![
+            Span::styled("  Desc      ", Style::default().fg(Color::DarkGray)),
+            Span::styled(d, Style::default().fg(Color::DarkGray)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled("  Uses      ", Style::default().fg(Color::DarkGray)),
+        Span::styled(skill.usage_count.to_string(), Style::default().fg(Color::White)),
+        Span::styled("   Last used  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(last_str, Style::default().fg(Color::White)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Rating    ", Style::default().fg(Color::DarkGray)),
+        Span::styled(stars(skill.rating), quality_style(skill.rating)),
+    ]));
+    lines.push(Line::from(""));
+
+    if skill.source == crate::models::SkillSource::Custom {
+        if let Some(content) = &skill.content {
+            lines.push(Line::from(Span::styled("  Content preview:", Style::default().fg(Color::DarkGray))));
+            let line_w = (inner.width as usize).saturating_sub(4).max(10);
+            let preview_lines = wrap_text(&content.chars().take(300).collect::<String>(), line_w, 5);
+            for pl in &preview_lines {
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(pl.clone(), Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  Built-in skill — content managed by Claude Code",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let h = lines.len().min(inner.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines), Rect { height: h, ..inner });
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
