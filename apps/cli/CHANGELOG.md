@@ -2,6 +2,43 @@
 
 ---
 
+## [0.7.0] — 2026-05-28
+
+### History tab — session checkpoints
+
+- **New `History` tab** (6th tab in the TUI) — browse, save, and restore named project checkpoints
+- **Checkpoint list** (top 40%) with columns: ID · Name · Saved date · Git branch · Total cost · Files changed
+- **Checkpoint detail** (bottom 60%) — name, date, branch + commit, cost breakdown, CLAUDE.md score, list of files changed since the prior checkpoint, summary, and action hints
+- **Inline save** — press `s` on the History tab; type a name; `Enter` to save, `Esc` to cancel
+- **Write context** — press `w` to write `.claux/CONTEXT.md` into the project directory (agent-loadable context file)
+- **Delete** — press `d` to remove the selected checkpoint
+
+### `claux checkpoint` CLI command
+
+- **`claux checkpoint save [name]`** — save a named checkpoint; prompts for name if omitted
+  - Captures: git branch + commit, lifetime project cost, active session cost, session count, CLAUDE.md score
+  - Computes files changed since the prior checkpoint's commit via `git diff --name-only`
+- **`claux checkpoint list`** — table of all checkpoints for the current project
+- **`claux checkpoint load <id>`** — print checkpoint context to stdout (Markdown format)
+- **`claux checkpoint load <id> --write`** — also write `.claux/CONTEXT.md` into the project; agents can read this at session start
+- **`claux checkpoint delete <id>`** — remove a checkpoint
+
+### Checkpoint storage
+
+- **Local index**: `~/.claude/claux/checkpoints/<project-hash>.json` — fast TUI reads
+- **Per-project copy**: `.claux/checkpoints.json` — committable, travels with the code
+- **CONTEXT.md**: structured Markdown capturing git state, costs, and changed files for agent consumption
+
+### Internal
+
+- New `src/checkpoints.rs` — `load_checkpoints()`, `save_checkpoint()`, `delete_checkpoint()`, `generate_context_md()`, `write_context_md()`, `git_diff_files()`, `infer_project_path()`
+- New `src/commands/checkpoint.rs` — CLI subcommand handler
+- New `Checkpoint` struct in `models.rs`
+- `App` extended with `checkpoints`, `checkpoint_cursor`, `checkpoints_dirty`, `cp_name_editing`, `cp_name_buf`
+- `Tab` enum extended with `History = 5`; updated all nav paths and draw routing
+
+---
+
 ## [0.6.0] — 2026-05-28
 
 ### Dashboard — CLAUDE.md & context quality in Insights

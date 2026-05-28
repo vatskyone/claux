@@ -220,6 +220,31 @@ pub struct ClauxConfig {
     pub monthly_credit_usd: Option<f64>,
 }
 
+// ── Session checkpoint (save/load context) ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Checkpoint {
+    /// 8-char random hex ID.
+    pub id:               String,
+    /// User-provided label.
+    pub name:             String,
+    /// RFC3339 creation timestamp.
+    pub created_at:       String,
+    pub project_path:     String,
+    pub session_id:       Option<String>,
+    pub git_branch:       Option<String>,
+    pub git_commit:       Option<String>,
+    /// Lifetime project cost (sum of all sessions) at save time.
+    pub cost_total_usd:   f64,
+    /// Active session cost at save time.
+    pub session_cost_usd: f64,
+    pub total_sessions:   usize,
+    /// Files changed since the prior checkpoint's commit (via git diff).
+    pub files_changed:    Vec<String>,
+    pub claudemd_score:   Option<u8>,
+    pub summary:          String,
+}
+
 // ── Aggregate / summary structs ───────────────────────────────────────────────
 
 #[derive(Debug, Default, Serialize)]

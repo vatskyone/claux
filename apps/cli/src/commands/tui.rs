@@ -19,8 +19,11 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::account::load_account_info;
+use crate::checkpoints::{
+    delete_checkpoint, infer_project_path, load_checkpoints, save_checkpoint, write_context_md,
+};
 use crate::config::load_claux_config;
-use crate::models::{AccountInfo, AgentRun, ClaudeSession, ClaudemdAnalysis, ClauxConfig, SkillInfo, agent_level};
+use crate::models::{AccountInfo, AgentRun, Checkpoint, ClaudeSession, ClaudemdAnalysis, ClauxConfig, SkillInfo, agent_level};
 use crate::monitor::{
     compute_agent_type_counts, load_agents_for_session, load_sessions, SessionCache,
 };
@@ -44,6 +47,7 @@ enum Tab {
     Analytics = 2,
     Agents    = 3,
     Skills    = 4,
+    History   = 5,
 }
 
 impl Tab {
@@ -53,16 +57,18 @@ impl Tab {
             Tab::Sessions  => Tab::Analytics,
             Tab::Analytics => Tab::Agents,
             Tab::Agents    => Tab::Skills,
-            Tab::Skills    => Tab::Dashboard,
+            Tab::Skills    => Tab::History,
+            Tab::History   => Tab::Dashboard,
         }
     }
     fn prev(self) -> Tab {
         match self {
-            Tab::Dashboard => Tab::Skills,
+            Tab::Dashboard => Tab::History,
             Tab::Sessions  => Tab::Dashboard,
             Tab::Analytics => Tab::Sessions,
             Tab::Agents    => Tab::Analytics,
             Tab::Skills    => Tab::Agents,
+            Tab::History   => Tab::Skills,
         }
     }
     fn label(self) -> &'static str {
@@ -72,6 +78,7 @@ impl Tab {
             Tab::Analytics => "Analytics",
             Tab::Agents    => "Agents",
             Tab::Skills    => "Skills",
+            Tab::History   => "History",
         }
     }
 }
@@ -97,6 +104,12 @@ struct App {
     skills:             Vec<SkillInfo>,
     skill_cursor:       usize,
     skills_dirty:       bool,
+    // History tab
+    checkpoints:         Vec<Checkpoint>,
+    checkpoint_cursor:   usize,
+    checkpoints_dirty:   bool,
+    cp_name_editing:     bool,
+    cp_name_buf:         String,
     // Tag editing (inside session detail overlay)
     tag_editing:        bool,
     tag_input_buf:      String,
@@ -127,6 +140,11 @@ impl App {
             skills:             vec![],
             skill_cursor:       0,
             skills_dirty:       true,
+            checkpoints:        vec![],
+            checkpoint_cursor:  0,
+            checkpoints_dirty:  true,
+            cp_name_editing:    false,
+            cp_name_buf:        String::new(),
             tag_editing:        false,
             tag_input_buf:      String::new(),
             account_info:       load_account_info(),
@@ -148,6 +166,9 @@ impl App {
         if self.tab == Tab::Skills {
             self.reload_skills();
         }
+        if self.tab == Tab::History {
+            self.reload_checkpoints();
+        }
         self.last_refresh = Instant::now();
     }
 
@@ -157,6 +178,15 @@ impl App {
             self.skill_cursor = self.skills.len() - 1;
         }
         self.skills_dirty = false;
+    }
+
+    fn reload_checkpoints(&mut self) {
+        let path = infer_project_path(&self.sessions);
+        self.checkpoints = load_checkpoints(&path);
+        if self.checkpoint_cursor >= self.checkpoints.len() && !self.checkpoints.is_empty() {
+            self.checkpoint_cursor = self.checkpoints.len() - 1;
+        }
+        self.checkpoints_dirty = false;
     }
 
     fn reload_agents(&mut self) {
@@ -217,6 +247,32 @@ fn event_loop(term: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
 
 /// Returns `true` if the app should quit.
 fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usize) -> bool {
+    // Checkpoint name input mode — highest priority on History tab
+    if app.cp_name_editing {
+        match code {
+            KeyCode::Enter => {
+                let name = app.cp_name_buf.trim().to_string();
+                if !name.is_empty() {
+                    let path = infer_project_path(&app.sessions);
+                    let _ = save_checkpoint(&path, &app.sessions, &name);
+                    app.reload_checkpoints();
+                }
+                app.cp_name_editing = false;
+                app.cp_name_buf     = String::new();
+            }
+            KeyCode::Esc => {
+                app.cp_name_editing = false;
+                app.cp_name_buf     = String::new();
+            }
+            KeyCode::Backspace => { app.cp_name_buf.pop(); }
+            KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
+                if app.cp_name_buf.len() < 50 { app.cp_name_buf.push(c); }
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     // Tag input mode gets highest priority
     if app.tag_editing {
         match code {
@@ -285,14 +341,16 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
         (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
             app.tab = app.tab.next();
             app.analytics_scroll = 0;
-            if app.tab == Tab::Agents { app.reload_agents(); }
-            if app.tab == Tab::Skills && app.skills_dirty { app.reload_skills(); }
+            if app.tab == Tab::Agents  { app.reload_agents(); }
+            if app.tab == Tab::Skills  && app.skills_dirty      { app.reload_skills(); }
+            if app.tab == Tab::History && app.checkpoints_dirty { app.reload_checkpoints(); }
         }
         (KeyCode::Left, _) | (KeyCode::Char('h'), _) => {
             app.tab = app.tab.prev();
             app.analytics_scroll = 0;
-            if app.tab == Tab::Agents { app.reload_agents(); }
-            if app.tab == Tab::Skills && app.skills_dirty { app.reload_skills(); }
+            if app.tab == Tab::Agents  { app.reload_agents(); }
+            if app.tab == Tab::Skills  && app.skills_dirty      { app.reload_skills(); }
+            if app.tab == Tab::History && app.checkpoints_dirty { app.reload_checkpoints(); }
         }
 
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
@@ -313,6 +371,9 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                 }
                 Tab::Skills => {
                     if app.skill_cursor > 0 { app.skill_cursor -= 1; }
+                }
+                Tab::History => {
+                    if app.checkpoint_cursor > 0 { app.checkpoint_cursor -= 1; }
                 }
                 Tab::Dashboard => {}
             }
@@ -338,6 +399,10 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                     let max = app.skills.len().saturating_sub(1);
                     if app.skill_cursor < max { app.skill_cursor += 1; }
                 }
+                Tab::History => {
+                    let max = app.checkpoints.len().saturating_sub(1);
+                    if app.checkpoint_cursor < max { app.checkpoint_cursor += 1; }
+                }
                 Tab::Dashboard => {}
             }
         }
@@ -351,6 +416,26 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                     .and_then(|s| find_claudemd_path(&s.project_path))
                     .and_then(|p| std::fs::read_to_string(p).ok())
                     .map(|c| score_claudemd_detailed(&c));
+            }
+        }
+
+        // History tab actions
+        (KeyCode::Char('s'), _) if app.tab == Tab::History => {
+            app.cp_name_editing = true;
+            app.cp_name_buf     = String::new();
+        }
+        (KeyCode::Char('d'), _) if app.tab == Tab::History => {
+            if let Some(cp) = app.checkpoints.get(app.checkpoint_cursor) {
+                let id  = cp.id.clone();
+                let path = infer_project_path(&app.sessions);
+                let _ = delete_checkpoint(&path, &id);
+                app.reload_checkpoints();
+            }
+        }
+        (KeyCode::Char('w'), _) if app.tab == Tab::History => {
+            if let Some(cp) = app.checkpoints.get(app.checkpoint_cursor) {
+                let path = infer_project_path(&app.sessions);
+                let _ = write_context_md(&path, cp);
             }
         }
 
@@ -381,6 +466,7 @@ fn draw(f: &mut Frame, app: &App) {
         Tab::Analytics => draw_analytics_screen(f, chunks[1], app),
         Tab::Agents    => draw_agents_screen(f, chunks[1], app),
         Tab::Skills    => draw_skills_screen(f, chunks[1], app),
+        Tab::History   => draw_history_screen(f, chunks[1], app),
     }
 
     draw_footer(f, chunks[2], app);
@@ -400,7 +486,7 @@ fn draw_tab_bar(f: &mut Frame, area: Rect, app: &App) {
 
     let mut spans = vec![Span::styled("  CLAUX  ", Style::default().fg(Color::DarkGray))];
 
-    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics, Tab::Agents, Tab::Skills] {
+    for tab in [Tab::Dashboard, Tab::Sessions, Tab::Analytics, Tab::Agents, Tab::Skills, Tab::History] {
         let is_selected = app.tab == tab;
         let label = match tab {
             Tab::Dashboard if has_active        => format!("  ● {}  ", tab.label()),
@@ -1821,7 +1907,12 @@ fn draw_detail_overlay(
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
-    let spans: Vec<Span> = if app.tag_editing {
+    let spans: Vec<Span> = if app.cp_name_editing {
+        vec![
+            Span::styled("  Checkpoint name  ", Style::default().fg(Color::Green)),
+            Span::styled("[Enter] save  [Esc] cancel  [Backspace] delete char", Style::default().fg(Color::DarkGray)),
+        ]
+    } else if app.tag_editing {
         vec![
             Span::styled("  Tag edit  ", Style::default().fg(Color::Yellow)),
             Span::styled("[Enter] save  [Esc] cancel  [Backspace] delete char", Style::default().fg(Color::DarkGray)),
@@ -1841,6 +1932,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             Tab::Analytics => &[("[↑/↓] scroll  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Agents    => &[("[↑/↓] select  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
             Tab::Skills    => &[("[↑/↓] select  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
+            Tab::History   => &[("[↑/↓] select  ", Color::DarkGray), ("[s] save  ", Color::Green), ("[w] write ctx  ", Color::Cyan), ("[d] delete  ", Color::DarkGray), ("[r] refresh  ", Color::DarkGray), ("[q] quit", Color::DarkGray)],
         };
         for (txt, col) in extra {
             v.push(Span::styled(*txt, Style::default().fg(*col)));
@@ -2235,4 +2327,245 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         width:  popup_w,
         height: popup_h,
     }
+}
+
+// ── History screen ────────────────────────────────────────────────────────────
+
+fn draw_history_screen(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+    draw_checkpoint_list(f, chunks[0], app);
+    draw_checkpoint_detail(f, chunks[1], app);
+}
+
+fn draw_checkpoint_list(f: &mut Frame, area: Rect, app: &App) {
+    let cps = &app.checkpoints;
+    let title = format!(" History ── {} checkpoint{} ", cps.len(), if cps.len() == 1 { "" } else { "s" });
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Reserve bottom row for name-input when editing
+    let list_height = if app.cp_name_editing {
+        inner.height.saturating_sub(2) as usize
+    } else {
+        inner.height as usize
+    };
+
+    if cps.is_empty() && !app.cp_name_editing {
+        f.render_widget(
+            Paragraph::new("  No checkpoints — press [s] to save the current project state")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        if app.cp_name_editing {
+            draw_cp_name_input(f, inner);
+        }
+        return;
+    }
+
+    let widths = [
+        Constraint::Length(10),
+        Constraint::Length(22),
+        Constraint::Length(12),
+        Constraint::Length(14),
+        Constraint::Length(9),
+        Constraint::Length(6),
+    ];
+
+    let rows: Vec<Row> = cps.iter().enumerate()
+        .take(list_height)
+        .map(|(idx, cp)| {
+            let is_sel = idx == app.checkpoint_cursor;
+            let date = cp.created_at.split('T').next().unwrap_or("").to_string();
+            let branch = cp.git_branch.clone().unwrap_or_else(|| "—".to_string());
+            let cost   = format!("${:.2}", cp.cost_total_usd);
+            let files  = if cp.files_changed.is_empty() { "—".to_string() } else { cp.files_changed.len().to_string() };
+
+            Row::new(vec![
+                Cell::from(cp.id.clone()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(cp.name.clone()),
+                Cell::from(date).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(branch).style(Style::default().fg(Color::Cyan)),
+                Cell::from(cost).style(Style::default().fg(Color::Yellow)),
+                Cell::from(files).style(Style::default().fg(Color::DarkGray)),
+            ])
+            .style(if is_sel { Style::default().bg(Color::DarkGray) } else { Style::default() })
+        })
+        .collect();
+
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec![
+                Cell::from("ID"),
+                Cell::from("Name"),
+                Cell::from("Saved"),
+                Cell::from("Branch"),
+                Cell::from("Cost"),
+                Cell::from("Files"),
+            ])
+            .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        );
+
+    let list_area = if app.cp_name_editing {
+        Rect { height: list_height as u16, ..inner }
+    } else {
+        inner
+    };
+    f.render_widget(table, list_area);
+
+    if app.cp_name_editing {
+        draw_cp_name_input(f, inner);
+    }
+}
+
+fn draw_cp_name_input(f: &mut Frame, inner: Rect) {
+    if inner.height < 2 { return; }
+    let input_y = inner.y + inner.height - 2;
+    let input_area = Rect { y: input_y, height: 1, ..inner };
+    let prompt_line = Line::from(vec![
+        Span::styled("  Name: ", Style::default().fg(Color::Green)),
+        Span::styled(
+            // placeholder — actual buf drawn by caller via app.cp_name_buf
+            "".to_string(),
+            Style::default().fg(Color::White),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(prompt_line), input_area);
+}
+
+fn draw_checkpoint_detail(f: &mut Frame, area: Rect, app: &App) {
+    let block = Block::default()
+        .title(" Detail ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Show name input prompt in detail panel when editing
+    if app.cp_name_editing {
+        let lines = vec![
+            Line::from(vec![
+                Span::styled("  Checkpoint name:  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("[{}▌]", app.cp_name_buf),
+                    Style::default().fg(Color::White).bg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(Span::styled("  Enter to save  ·  Esc to cancel", Style::default().fg(Color::DarkGray))),
+        ];
+        f.render_widget(Paragraph::new(lines), inner);
+        return;
+    }
+
+    let Some(cp) = app.checkpoints.get(app.checkpoint_cursor) else {
+        f.render_widget(
+            Paragraph::new("  Select a checkpoint above, or press [s] to save one.")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    };
+
+    let date = cp.created_at
+        .replace('T', "  ")
+        .split('+').next()
+        .unwrap_or(&cp.created_at)
+        .to_string();
+    let date = &date[..date.len().min(19)];
+
+    let mut lines: Vec<Line> = vec![Line::from("  ")];
+
+    // Name + ID
+    lines.push(Line::from(vec![
+        Span::styled("  Name     ", Style::default().fg(Color::DarkGray)),
+        Span::styled(cp.name.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("   ({})", cp.id), Style::default().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Saved    ", Style::default().fg(Color::DarkGray)),
+        Span::styled(date.to_string(), Style::default().fg(Color::DarkGray)),
+    ]));
+
+    // Git info
+    match (&cp.git_branch, &cp.git_commit) {
+        (Some(b), Some(c)) => lines.push(Line::from(vec![
+            Span::styled("  Branch   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(b.clone(), Style::default().fg(Color::Cyan)),
+            Span::styled(format!("  ·  {}", &c[..c.len().min(8)]), Style::default().fg(Color::DarkGray)),
+        ])),
+        (Some(b), None) => lines.push(Line::from(vec![
+            Span::styled("  Branch   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(b.clone(), Style::default().fg(Color::Cyan)),
+        ])),
+        _ => {}
+    }
+
+    lines.push(Line::from("  "));
+
+    // Cost + sessions
+    lines.push(Line::from(vec![
+        Span::styled("  Cost     ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("${:.2} total", cp.cost_total_usd), Style::default().fg(Color::Yellow)),
+        Span::styled(format!("  ·  ${:.2} this session", cp.session_cost_usd), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("  ·  {} sessions", cp.total_sessions), Style::default().fg(Color::DarkGray)),
+    ]));
+
+    // CLAUDE.md score
+    if let Some(score) = cp.claudemd_score {
+        let (label, col) = if score >= 70 { ("Good", Color::Green) }
+            else if score >= 40 { ("Fair", Color::Yellow) }
+            else { ("Weak", Color::Red) };
+        lines.push(Line::from(vec![
+            Span::styled("  CLAUDE.md ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{}/100", score), Style::default().fg(col)),
+            Span::styled(format!("  {}", label), Style::default().fg(col)),
+        ]));
+    }
+
+    // Files changed
+    if !cp.files_changed.is_empty() {
+        lines.push(Line::from("  "));
+        lines.push(Line::from(Span::styled(
+            format!("  Files changed since prior checkpoint  ({})", cp.files_changed.len()),
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+        )));
+        for f_path in cp.files_changed.iter().take(8) {
+            lines.push(Line::from(Span::styled(
+                format!("    {}", f_path),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        if cp.files_changed.len() > 8 {
+            lines.push(Line::from(Span::styled(
+                format!("    … and {} more", cp.files_changed.len() - 8),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    // Summary
+    if !cp.summary.is_empty() {
+        lines.push(Line::from("  "));
+        lines.push(Line::from(Span::styled("  Summary", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))));
+        for l in wrap_text(&cp.summary, inner.width.saturating_sub(4) as usize, 3) {
+            lines.push(Line::from(Span::styled(format!("    {}", l), Style::default().fg(Color::DarkGray))));
+        }
+    }
+
+    lines.push(Line::from("  "));
+    lines.push(Line::from(vec![
+        Span::styled("  [w] write .claux/CONTEXT.md  ", Style::default().fg(Color::Cyan)),
+        Span::styled("[d] delete  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[s] new checkpoint", Style::default().fg(Color::Green)),
+    ]));
+
+    let h = lines.len().min(inner.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines), Rect { height: h, ..inner });
 }

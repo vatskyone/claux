@@ -1,4 +1,5 @@
 mod account;
+mod checkpoints;
 mod commands;
 mod config;
 mod format;
@@ -14,9 +15,10 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
+use commands::checkpoint::CheckpointAction;
+use commands::config::ConfigAction;
 use commands::export::ExportFormat;
 use commands::skills::SkillsAction;
-use commands::config::ConfigAction;
 use monitor::{load_sessions, SessionCache};
 
 #[derive(Parser)]
@@ -117,6 +119,23 @@ enum Commands {
         action: ConfigAction,
     },
 
+    /// Save, list, load, or delete project checkpoints.
+    ///
+    /// A checkpoint captures a named snapshot of project state — git branch,
+    /// commit, cost to date, and files changed — so you can reload context
+    /// in a future session.
+    ///
+    /// Examples:
+    ///   claux checkpoint save "v0.7.0 complete"
+    ///   claux checkpoint list
+    ///   claux checkpoint load abc123
+    ///   claux checkpoint load abc123 --write   # also writes .claux/CONTEXT.md
+    ///   claux checkpoint delete abc123
+    Checkpoint {
+        #[command(subcommand)]
+        action: CheckpointAction,
+    },
+
     /// Launch the live TUI dashboard (press q to quit, r to refresh).
     Tui,
 
@@ -154,6 +173,9 @@ fn main() -> Result<()> {
     if let Commands::Config { action } = &command {
         return commands::config::run(action);
     }
+    if let Commands::Checkpoint { action } = &command {
+        return commands::checkpoint::run(action);
+    }
 
     // For all other commands, load sessions once.
     let mut cache = SessionCache::new();
@@ -179,7 +201,8 @@ fn main() -> Result<()> {
             commands::tag::run(&sessions, &session, label.as_deref(), remove)?;
         }
         Commands::Tui | Commands::Completions { .. } |
-        Commands::Account | Commands::Skills { .. } | Commands::Config { .. } => unreachable!(),
+        Commands::Account | Commands::Skills { .. } | Commands::Config { .. } |
+        Commands::Checkpoint { .. } => unreachable!(),
     }
 
     Ok(())
