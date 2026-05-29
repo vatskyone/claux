@@ -106,20 +106,31 @@ struct PopoverView: View {
         .frame(height: tabHeight)
     }
 
-    // CLAUX in 5×5-pixel monospace art (5 letters, 2-space gap each)
+    @Environment(\.colorScheme) private var colorScheme
+
+    // CLAUX logo image — loaded from the app bundle resource.
+    // Light mode: multiply blend removes the white background, keeps the black logo.
+    // Dark mode: invert first (black→white), then screen blend removes the black background.
     private var clauxLogo: some View {
-        let rows: [String] = [
-            " ███   █     ███   █   █  █   █",
-            "█      █    █   █  █   █   █ █ ",
-            "█      █    █████  █   █    █  ",
-            "█      █    █   █  █   █   █ █ ",
-            " ███   █████ █   █   ███   █   █",
-        ]
-        return VStack(spacing: 1) {
-            ForEach(rows.indices, id: \.self) { i in
-                Text(rows[i])
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(Color(nsColor: .quaternaryLabelColor))
+        Group {
+            if let url = Bundle.module.url(forResource: "claux-logo", withExtension: "png"),
+               let nsImage = NSImage(contentsOf: url) {
+                if colorScheme == .dark {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 28)
+                        .colorInvert()
+                        .blendMode(.screen)
+                        .opacity(0.35)
+                } else {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 28)
+                        .blendMode(.multiply)
+                        .opacity(0.22)
+                }
             }
         }
     }

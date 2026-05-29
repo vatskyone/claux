@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Claux",
-            path: "Sources/Claux"
+            path: "Sources/Claux",
+            resources: [.process("Resources")]
         )
     ]
 )

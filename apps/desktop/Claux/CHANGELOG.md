@@ -2,6 +2,13 @@
 
 ---
 
+## [1.6.3] — 2026-05-29
+
+### Improvements
+- **Real CLAUX logo** (`PopoverView.swift`, `Package.swift`) — replaced ASCII pixel-art watermark with the actual `ascii-art-text.png` logo image, bundled as a Swift package resource. Uses multiply blend (light mode) and invert + screen blend (dark mode) so the white-background PNG renders cleanly on any macOS appearance.
+
+---
+
 ## [1.6.2] — 2026-05-29
 
 ### New Features
