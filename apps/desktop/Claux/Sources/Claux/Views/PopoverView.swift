@@ -81,40 +81,67 @@ struct PopoverView: View {
         }
     }
 
-    // MARK: – Dashboard tab — session card only
+    // MARK: – Dashboard tab — session card + CLAUX logo watermark at bottom
 
     private var dashboardContent: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 8) {
-                if let session = store.activeSession {
-                    ActiveSessionCard(session: session)
-                } else {
-                    NoActiveSessionView()
+        ZStack(alignment: .bottom) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 8) {
+                    if let session = store.activeSession {
+                        ActiveSessionCard(session: session)
+                    } else {
+                        NoActiveSessionView()
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                // Bottom padding reserves space so the card never hides behind the logo
+                .padding(.bottom, 68)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+
+            // CLAUX pixel-art logo — pinned to bottom of the fixed content area
+            clauxLogo
+                .padding(.bottom, 10)
         }
         .frame(height: tabHeight)
     }
 
-    // MARK: – Analytics tab — spend summary + compact analytics
+    // CLAUX in 5×5-pixel monospace art (5 letters, 2-space gap each)
+    private var clauxLogo: some View {
+        let rows: [String] = [
+            " ███   █     ███   █   █  █   █",
+            "█      █    █   █  █   █   █ █ ",
+            "█      █    █████  █   █    █  ",
+            "█      █    █   █  █   █   █ █ ",
+            " ███   █████ █   █   ███   █   █",
+        ]
+        return VStack(spacing: 1) {
+            ForEach(rows.indices, id: \.self) { i in
+                Text(rows[i])
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .quaternaryLabelColor))
+            }
+        }
+    }
+
+    // MARK: – Analytics tab — spend totals (no sparkline) + compact analytics
 
     private var analyticsContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
-                SpendSummaryView(summary: store.spendSummary,
-                                sparkData: Array(store.dailySpend.suffix(7)))
+                // Sparkline hidden here — the chart below already shows spend trends.
+                SpendSummaryView(summary: store.spendSummary, sparkData: [])
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 6)
 
                 Divider()
                     .padding(.horizontal, 12)
 
                 CompactAnalyticsView()
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
 
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
@@ -136,21 +163,15 @@ struct PopoverView: View {
         .frame(height: tabHeight)
     }
 
-    // MARK: – History tab — sessions list + search
+    // MARK: – History tab — sticky header + scrollable list
 
     private var historyContent: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 8) {
-                RecentSessionsView(sessions: store.recentSessions) { session in
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedSession = session
-                    }
-                }
+        HistoryTabView(sessions: store.recentSessions,
+                       tabHeight: tabHeight) { session in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                selectedSession = session
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
-        .frame(height: tabHeight)
     }
 
     // MARK: – Header
@@ -227,6 +248,173 @@ struct PopoverView: View {
             .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+    }
+}
+
+// MARK: – History tab: sticky header + scrollable session list
+
+private struct HistoryTabView: View {
+    let sessions: [ClaudeSession]
+    let tabHeight: CGFloat
+    let onSelect: (ClaudeSession) -> Void
+
+    @State private var searchText: String = ""
+    @FocusState private var searchFocused: Bool
+
+    private var filtered: [ClaudeSession] {
+        guard !searchText.isEmpty else { return sessions }
+        let q = searchText.lowercased()
+        return sessions.filter {
+            ($0.title?.lowercased().contains(q) ?? false) ||
+            $0.projectPath.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // ── Sticky header (does not scroll) ──────────────────────────────
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("Recent")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                    Spacer()
+                    let badge = searchText.isEmpty
+                        ? "\(sessions.count)"
+                        : "\(filtered.count)/\(sessions.count)"
+                    Text(badge)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color(nsColor: .separatorColor).opacity(0.5))
+                        .clipShape(Capsule())
+                        .animation(.easeInOut(duration: 0.15), value: searchText)
+                }
+                .padding(.horizontal, 2)
+
+                if sessions.count >= 2 {
+                    searchBar
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            // ── Scrollable session list ───────────────────────────────────────
+            ScrollView(.vertical, showsIndicators: false) {
+                if filtered.isEmpty {
+                    emptyState
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                } else {
+                    sessionList
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                }
+            }
+        }
+        .frame(height: tabHeight)
+    }
+
+    // MARK: – Search bar (same style as RecentSessionsView)
+
+    private var searchBar: some View {
+        ZStack {
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                Text("Search sessions…")
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Color.secondary)
+            .opacity(searchFocused || !searchText.isEmpty ? 0 : 1)
+
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.secondary)
+                TextField("", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .focused($searchFocused)
+                Spacer(minLength: 0)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        searchFocused = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .opacity(searchFocused || !searchText.isEmpty ? 1 : 0)
+        }
+        .frame(height: 26)
+        .background(.regularMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5))
+        .contentShape(Capsule())
+        .onTapGesture { searchFocused = true }
+        .animation(.easeInOut(duration: 0.18), value: searchFocused)
+        .animation(.easeInOut(duration: 0.18), value: searchText.isEmpty)
+    }
+
+    // MARK: – Session rows
+
+    private var sessionList: some View {
+        VStack(spacing: 0) {
+            ForEach(filtered.indices, id: \.self) { i in
+                SessionRowView(session: filtered[i], onSelect: onSelect)
+                if i < filtered.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
+        )
+        .animation(.easeInOut(duration: 0.15), value: searchText)
+    }
+
+    // MARK: – Empty states
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if sessions.isEmpty {
+            Text("No recent sessions")
+                .font(.system(size: 12))
+                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 20)
+        } else {
+            VStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .light))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                Text("No results for \"\(searchText)\"")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 0.5)
+            )
         }
     }
 }

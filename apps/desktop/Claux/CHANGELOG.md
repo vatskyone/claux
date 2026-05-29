@@ -2,6 +2,18 @@
 
 ---
 
+## [1.6.2] — 2026-05-29
+
+### New Features
+- **CLAUX pixel-art logo** (`PopoverView.swift`) — 5×5 monospace block-art watermark of "CLAUX" displayed at the bottom of the Dashboard tab in the blank space below the active session card; very subtle (quaternary label color).
+
+### Improvements
+- **History tab — sticky header** (`PopoverView.swift`) — "Recent" label, session count badge, and search bar are now pinned and do not scroll; only the session rows scroll, matching standard list UX.
+- **Analytics tab — no duplicate sparkline** (`PopoverView.swift`) — 7-day sparkline removed from the SpendSummaryView card in the Analytics tab (the chart below already covers spend history).
+- **Analytics tab — tighter layout** (`PopoverView.swift`) — reduced vertical padding between the spend-totals card / divider and the analytics chart for a cleaner, denser layout.
+
+---
+
 ## [1.6.1] — 2026-05-29
 
 ### Bug Fixes
