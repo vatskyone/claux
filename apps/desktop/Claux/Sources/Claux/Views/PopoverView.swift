@@ -84,55 +84,18 @@ struct PopoverView: View {
     // MARK: – Dashboard tab — session card + CLAUX logo watermark at bottom
 
     private var dashboardContent: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
-                    if let session = store.activeSession {
-                        ActiveSessionCard(session: session)
-                    } else {
-                        NoActiveSessionView()
-                    }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 8) {
+                if let session = store.activeSession {
+                    ActiveSessionCard(session: session)
+                } else {
+                    NoActiveSessionView()
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                // Bottom padding reserves space so the card never hides behind the logo
-                .padding(.bottom, 68)
             }
-
-            // CLAUX pixel-art logo — pinned to bottom of the fixed content area
-            clauxLogo
-                .padding(.bottom, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
         .frame(height: tabHeight)
-    }
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    // CLAUX logo image — loaded from the app bundle resource.
-    // Light mode: multiply blend removes the white background, keeps the black logo.
-    // Dark mode: invert first (black→white), then screen blend removes the black background.
-    private var clauxLogo: some View {
-        Group {
-            if let url = Bundle.module.url(forResource: "claux-logo", withExtension: "png"),
-               let nsImage = NSImage(contentsOf: url) {
-                if colorScheme == .dark {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 28)
-                        .colorInvert()
-                        .blendMode(.screen)
-                        .opacity(0.35)
-                } else {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 28)
-                        .blendMode(.multiply)
-                        .opacity(0.22)
-                }
-            }
-        }
     }
 
     // MARK: – Analytics tab — spend totals (no sparkline) + compact analytics

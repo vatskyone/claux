@@ -2,6 +2,13 @@
 
 ---
 
+## [1.6.4] — 2026-05-29
+
+### Internal
+- Removed CLAUX logo watermark from Dashboard tab bottom area.
+
+---
+
 ## [1.6.3] — 2026-05-29
 
 ### Improvements
