@@ -20,6 +20,9 @@ struct PopoverView: View {
 
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
 
+    // Fixed content-area height — keeps the popover the same size on every tab.
+    private let tabHeight: CGFloat = 340
+
     var body: some View {
         ZStack {
             // ── Main content + session detail overlay ────────────────────────
@@ -78,27 +81,37 @@ struct PopoverView: View {
         }
     }
 
-    // MARK: – Dashboard tab
+    // MARK: – Dashboard tab — session card only
 
     private var dashboardContent: some View {
-        VStack(spacing: 8) {
-            if let session = store.activeSession {
-                ActiveSessionCard(session: session)
-            } else {
-                NoActiveSessionView()
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 8) {
+                if let session = store.activeSession {
+                    ActiveSessionCard(session: session)
+                } else {
+                    NoActiveSessionView()
+                }
             }
-            SpendSummaryView(summary: store.spendSummary,
-                            sparkData: Array(store.dailySpend.suffix(7)))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .frame(height: tabHeight)
     }
 
-    // MARK: – Analytics tab
+    // MARK: – Analytics tab — spend summary + compact analytics
 
     private var analyticsContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
+                SpendSummaryView(summary: store.spendSummary,
+                                sparkData: Array(store.dailySpend.suffix(7)))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
+
+                Divider()
+                    .padding(.horizontal, 12)
+
                 CompactAnalyticsView()
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -120,26 +133,27 @@ struct PopoverView: View {
                 .padding(.bottom, 4)
             }
         }
-        .frame(maxHeight: 480)
+        .frame(height: tabHeight)
     }
 
-    // MARK: – History tab
+    // MARK: – History tab — sessions list + search
 
     private var historyContent: some View {
-        VStack(spacing: 8) {
-            RecentSessionsView(sessions: store.recentSessions) { session in
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    selectedSession = session
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 8) {
+                RecentSessionsView(sessions: store.recentSessions) { session in
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedSession = session
+                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .frame(height: tabHeight)
     }
 
     // MARK: – Header
-    // ZStack lets "Live / Idle" sit at true horizontal center while
-    // the title stays left-aligned and the action buttons stay right-aligned.
     private var header: some View {
         ZStack {
             // Center: Live / Idle status
@@ -167,16 +181,16 @@ struct PopoverView: View {
                 Spacer()
             }
 
-            // Right: refresh + settings
+            // Right: refresh + settings (size 13, 28×28 tap target)
             HStack(spacing: 2) {
                 Spacer()
                 Button {
                     store.refreshNow()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                        .frame(width: 22, height: 22)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .help("Refresh sessions now")
@@ -186,16 +200,16 @@ struct PopoverView: View {
                     openWindow(id: "settings")
                 } label: {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                        .frame(width: 22, height: 22)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .help("Settings")
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .background(Color.clear)
     }
 

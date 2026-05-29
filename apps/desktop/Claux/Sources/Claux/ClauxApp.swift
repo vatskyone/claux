@@ -179,30 +179,52 @@ final class InstallerView: NSView {
 
 // Captures NSStatusBarButton's original action/target (SwiftUI's popover toggle),
 // then routes left-clicks back to it and right-clicks to the context menu.
+//
+// On macOS 14/15, rightMouseUp is no longer reliably delivered to a status bar
+// button's action target. We use a local event monitor as the primary path for
+// right-click detection, with the button's action as a fallback.
 final class StatusButtonHandler: NSObject {
     private weak var button: NSStatusBarButton?
     private let originalAction: Selector?
     private weak var originalTarget: AnyObject?
+    private var rightClickMonitor: Any?
 
     init(button: NSStatusBarButton) {
         self.button         = button
         self.originalAction = button.action
         self.originalTarget = button.target as AnyObject?
         super.init()
+
         button.target = self
         button.action = #selector(handleClick(_:))
-        // Fire the action on both mouse-up events so we can distinguish them.
-        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.sendAction(on: [.leftMouseUp, .rightMouseDown])
+
+        // Local monitor intercepts rightMouseDown before the OS can swallow it.
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak button] event in
+            guard let button = button,
+                  event.window == button.window else { return event }
+            DispatchQueue.main.async {
+                let menu = MenuBarContextMenu.build()
+                NSMenu.popUpContextMenu(menu, with: event, for: button)
+            }
+            return nil  // consume — prevents the button action from also firing
+        }
+    }
+
+    deinit {
+        if let monitor = rightClickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 
     @objc private func handleClick(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else { return }
-        if event.type == .rightMouseUp {
-            // Build and pop the context menu anchored to the button.
+        let isRightClick = event.type == .rightMouseDown || event.type == .rightMouseUp
+        let isControlClick = event.type == .leftMouseUp && event.modifierFlags.contains(.control)
+        if isRightClick || isControlClick {
             let menu = MenuBarContextMenu.build()
             NSMenu.popUpContextMenu(menu, with: event, for: sender)
         } else {
-            // Forward left-click to SwiftUI's handler → toggles the popover.
             if let action = originalAction {
                 NSApp.sendAction(action, to: originalTarget, from: sender)
             }

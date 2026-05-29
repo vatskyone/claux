@@ -2,6 +2,19 @@
 
 ---
 
+## [1.6.1] — 2026-05-29
+
+### Bug Fixes
+- **Right-click context menu** (`ClauxApp.swift`) — fixed on macOS 14/15 (Sequoia) by adding a `NSEvent.addLocalMonitorForEvents(.rightMouseDown)` path as the primary handler; the OS was swallowing `rightMouseUp` before it reached the button's action target. Also catches control-click as an alias.
+
+### Improvements
+- **Larger header icons** (`PopoverView.swift`) — refresh and settings buttons increased from size 10 → 13, tap target from 22 × 22 → 28 × 28.
+- **Dashboard — session card only** (`PopoverView.swift`) — `SpendSummaryView` moved to the Analytics tab; the Dashboard tab now shows only the active session card for a leaner default view.
+- **Fixed popover height** (`PopoverView.swift`) — tab content area is pinned to 340 pt; switching between Dashboard, Analytics, and History no longer resizes the popover window.
+- **Analytics tab — spend summary at top** (`PopoverView.swift`) — Today / This week / This month spend cards now appear at the top of the Analytics tab before the chart and breakdowns.
+
+---
+
 ## [1.6.0] — 2026-05-29
 
 ### New Features
