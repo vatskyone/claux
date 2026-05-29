@@ -1,16 +1,23 @@
 import SwiftUI
 import AppKit
 
+// MARK: – Tab enum
+
+enum PopoverTab: String, CaseIterable {
+    case dashboard = "Dashboard"
+    case analytics = "Analytics"
+    case history   = "History"
+}
+
+// MARK: – Popover root
+
 struct PopoverView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.openWindow) private var openWindow
 
-    // The session currently shown in the detail overlay (nil = hidden)
     @State private var selectedSession: ClaudeSession? = nil
+    @State private var activeTab: PopoverTab = .dashboard
 
-    // Onboarding: shown on first launch, dismissed after the user completes the flow.
-    // Migration guard: if the user already has app settings stored (i.e. they were
-    // using the app before onboarding was added), mark it complete automatically.
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
 
     var body: some View {
@@ -20,28 +27,8 @@ struct PopoverView: View {
                 VStack(spacing: 0) {
                     header
                     Divider()
-
-                    VStack(spacing: 8) {
-                        if let session = store.activeSession {
-                            ActiveSessionCard(session: session)
-                        } else {
-                            NoActiveSessionView()
-                        }
-
-                        SpendSummaryView(summary: store.spendSummary,
-                                        sparkData: Array(store.dailySpend.suffix(7)))
-
-                        RecentSessionsView(sessions: store.recentSessions) { session in
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                selectedSession = session
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-
-                    Divider()
-                    bottomBar
+                    tabContent
+                    tabBar
                 }
 
                 // Session detail overlay — slides up from bottom when a row is tapped.
@@ -63,7 +50,6 @@ struct PopoverView: View {
             }
 
             // ── Onboarding overlay (first launch only) ───────────────────────
-            // Covers the entire popover until the user completes the 3-step flow.
             if !onboardingCompleted {
                 OnboardingView()
                     .transition(.opacity)
@@ -72,13 +58,8 @@ struct PopoverView: View {
         }
         .frame(width: 340)
         .nativeBlurBackground(material: .menu)
-        // Refresh session data whenever the popover window gains focus
-        // (i.e. every time the user clicks the menu bar icon to open it).
-        // This ensures the spend totals and session list are never stale.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             store.refreshNow()
-            // Migration: existing users (identifiable by already having stored settings)
-            // skip the onboarding they've never seen before.
             if !onboardingCompleted,
                UserDefaults.standard.object(forKey: "autoRefreshInterval") != nil {
                 onboardingCompleted = true
@@ -86,9 +67,79 @@ struct PopoverView: View {
         }
     }
 
+    // MARK: – Tab content router
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch activeTab {
+        case .dashboard: dashboardContent
+        case .analytics: analyticsContent
+        case .history:   historyContent
+        }
+    }
+
+    // MARK: – Dashboard tab
+
+    private var dashboardContent: some View {
+        VStack(spacing: 8) {
+            if let session = store.activeSession {
+                ActiveSessionCard(session: session)
+            } else {
+                NoActiveSessionView()
+            }
+            SpendSummaryView(summary: store.spendSummary,
+                            sparkData: Array(store.dailySpend.suffix(7)))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: – Analytics tab
+
+    private var analyticsContent: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                CompactAnalyticsView()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "analytics")
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10))
+                        Text("Open full Analytics window")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 4)
+            }
+        }
+        .frame(maxHeight: 480)
+    }
+
+    // MARK: – History tab
+
+    private var historyContent: some View {
+        VStack(spacing: 8) {
+            RecentSessionsView(sessions: store.recentSessions) { session in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedSession = session
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
     // MARK: – Header
     // ZStack lets "Live / Idle" sit at true horizontal center while
-    // the title stays left-aligned and the refresh button stays right-aligned.
+    // the title stays left-aligned and the action buttons stay right-aligned.
     private var header: some View {
         ZStack {
             // Center: Live / Idle status
@@ -116,8 +167,8 @@ struct PopoverView: View {
                 Spacer()
             }
 
-            // Right: refresh
-            HStack {
+            // Right: refresh + settings
+            HStack(spacing: 2) {
                 Spacer()
                 Button {
                     store.refreshNow()
@@ -129,6 +180,18 @@ struct PopoverView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Refresh sessions now")
+
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "settings")
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
             }
         }
         .padding(.horizontal, 16)
@@ -136,42 +199,21 @@ struct PopoverView: View {
         .background(Color.clear)
     }
 
-    // MARK: – Bottom bar
-    private var bottomBar: some View {
-        HStack(spacing: 14) {
-            Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "settings")
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 11))
-                    Text("Settings…")
-                        .font(.system(size: 13))
-                }
-                .foregroundStyle(Color(nsColor: .labelColor))
-            }
-            .buttonStyle(.plain)
+    // MARK: – Tab bar
 
-            Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "analytics")
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chart.bar")
-                        .font(.system(size: 11))
-                    Text("Analytics")
-                        .font(.system(size: 13))
+    private var tabBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Picker("", selection: $activeTab) {
+                ForEach(PopoverTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
-                .foregroundStyle(Color(nsColor: .labelColor))
             }
-            .buttonStyle(.plain)
-
-            Spacer()
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.clear)
     }
 }
 

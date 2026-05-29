@@ -2,6 +2,24 @@
 
 ---
 
+## [1.6.0] — 2026-05-29
+
+### New Features
+- **History tab** (`PopoverView.swift`) — sessions list and search bar moved out of the main view into a dedicated "History" tab, keeping the dashboard lean. Switch to it with the tab bar at the bottom of the popover.
+- **Analytics tab** (`PopoverView.swift`, `AnalyticsView.swift`) — compact inline analytics (spend chart, by-project, by-model) now lives directly in the popover. An "Open full Analytics window" link opens the existing large window for the full view.
+- **Three-tab segmented control** (`PopoverView.swift`) — native macOS segmented picker at the bottom of the popover replaces the old bottom bar: **Dashboard · Analytics · History**.
+
+### Improvements
+- **Settings moved to header** (`PopoverView.swift`) — gear icon added to the top-right header alongside the refresh button; bottom bar is now the tab control only.
+- **Dashboard view** (`PopoverView.swift`) — now shows only the active session card and spend summary, with no sessions list cluttering the default view.
+- **CompactAnalyticsView** (`AnalyticsView.swift`) — new struct optimised for the 340 pt popover width: adaptive 2-row project rows (no fixed-width truncation issues) and the full interactive spend chart.
+
+### Internal
+- `PopoverTab` enum added (`PopoverView.swift`): `.dashboard`, `.analytics`, `.history`.
+- Old `bottomBar` (Settings + Analytics buttons) removed from `PopoverView`.
+
+---
+
 ## [1.5.4] — 2026-05-27
 
 ### Improvements
