@@ -55,14 +55,21 @@ final class SessionMonitor: ObservableObject {
 
     // MARK: – Lifecycle
 
+    private var refreshIntervalSeconds: TimeInterval {
+        let configured = UserDefaults.standard.integer(forKey: "autoRefreshInterval")
+        let clamped = max(5, min(configured > 0 ? configured : 10, 300))
+        return TimeInterval(clamped)
+    }
+
     private func startMonitoring() {
         refresh()
         installWatchers()
 
-        // Fallback poll every 10 s — catches JSONL updates inside project subdirs
+        // Fallback poll (configurable) — catches JSONL updates inside project subdirs
         // that DispatchSource on the parent directory may miss.
         DispatchQueue.main.async { [weak self] in
-            self?.pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.pollTimer = Timer.scheduledTimer(withTimeInterval: self.refreshIntervalSeconds, repeats: true) { [weak self] _ in
                 self?.refresh()
             }
         }

@@ -51,6 +51,7 @@ enum SessionParser {
 
         let sessionId          = url.deletingPathExtension().lastPathComponent
         let isActiveByDir      = activeSessionIds.contains(sessionId)
+        let includeCacheCost   = (UserDefaults.standard.object(forKey: "includeCacheCost") as? Bool) ?? true
 
         var firstDate:    Date?
         var lastDate:     Date?
@@ -145,7 +146,12 @@ enum SessionParser {
             lastContextWindow = inp + cacheR + cacheW
 
             let rates    = Rates.forModel(latestModel)
-            let turnCost = rates.cost(input: inp, output: out, cacheRead: cacheR, cacheWrite: cacheW)
+            let turnCost = rates.cost(
+                input: inp,
+                output: out,
+                cacheRead: includeCacheCost ? cacheR : 0,
+                cacheWrite: includeCacheCost ? cacheW : 0
+            )
             totalCost += turnCost
 
             // Attribute this turn's cost to its calendar day (local timezone).

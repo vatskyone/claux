@@ -2,6 +2,28 @@
 
 ---
 
+## [1.7.0] — 2026-05-30
+
+### New Features
+- **AppKit menu bar architecture** (`ClauxApp.swift`) — Full architectural refactor: replaced `MenuBarExtra` with a native `NSStatusItem` + `NSPopover` + `NSMenu` stack implemented via `ClauxStatusAppDelegate` and `ClauxStatusItemController`. Left click deterministically toggles the popover; right click (and control-click) deterministically shows the native context menu. Eliminates the event-routing ambiguity inherent to `MenuBarExtra`.
+- **Right-click context menu** (`ClauxApp.swift`) — Right-clicking the Claux menu bar icon now reliably shows the context menu on all tested macOS versions. Menu items: **Settings…**, **Show in Menu Bar** (Always / When session is active), **Quit Claux**.
+- **`clauxOpenWindow` bridge** (`ClauxApp.swift`, `PopoverView.swift`) — New global bridge allows SwiftUI views hosted inside the AppKit popover to open Settings and Analytics windows through `ClauxStatusItemController`, replacing the broken `openWindow(id:)` SwiftUI environment action in the AppKit-hosted context.
+
+### Bug Fixes
+- **`includeCacheCost` now applied to cost totals** (`SessionParser.swift`) — The setting existed in UI but was not actually excluding cache token charges from cost calculations. Now correctly omits cache read/write costs from per-turn totals when disabled.
+- **`autoRefreshInterval` wired into polling timer** (`SessionMonitor.swift`) — Session monitor was always polling every 10 s regardless of the configured refresh interval. Now reads the stored preference (clamped 5–300 s) and restarts the timer when settings change.
+- **Menu bar visibility now enforced** (`ClauxApp.swift`) — `menuBarVisibility` preference (`always` / `when_active`) now actually controls status item presence. `when_active` hides the icon when no Claude session is active; `always` keeps it visible at all times.
+
+### Improvements
+- **Visibility option cleanup** (`ClauxApp.swift`) — Removed the `Never` option from the "Show in Menu Bar" submenu (avoids trapping users with a hidden icon). Renamed `When Claude Code is running` → `When session is active` for clarity. Existing `never` preferences are automatically migrated to `always` on first launch.
+
+### Internal
+- **Build version unified** (`build_app.sh`, `Design.swift`) — `build_app.sh` now extracts `AppVersion.current` from `Design.swift` and writes it to `CFBundleShortVersionString` in the packaged `Info.plist`, preventing version drift between the UI and the app bundle.
+- `ClauxStatusAppDelegate` + `ClauxStatusItemController` introduced; `MenuBarExtra` scene removed from `ClauxApp.body`.
+- `updateVisibilityAndAppearance()` and `updateStatusButtonAppearance()` are the single choke-points for all icon/visibility state changes.
+
+---
+
 ## [1.6.4] — 2026-05-29
 
 ### Internal

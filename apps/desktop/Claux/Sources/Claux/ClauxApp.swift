@@ -1,13 +1,14 @@
 import SwiftUI
 import AppKit
+import Combine
 
-// Captured from SwiftUI's @Environment(\.openWindow) when MenuBarLabel first appears.
-// Used by the AppKit right-click handler to open SwiftUI windows.
+// Shared window-opening bridge used by SwiftUI views and AppKit menu actions.
 var clauxOpenWindow: ((String) -> Void)?
 
 @main
 struct ClauxApp: App {
     @StateObject private var store = AppStore()
+    @NSApplicationDelegateAdaptor(ClauxStatusAppDelegate.self) private var appDelegate
 
     init() {
         if UserDefaults.standard.string(forKey: "menuBarVisibility") == "never" {
@@ -40,14 +41,7 @@ struct ClauxApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra {
-            PopoverView()
-                .environmentObject(store)
-                .appThemed()
-        } label: {
-            MenuBarLabel(store: store)
-        }
-        .menuBarExtraStyle(.window)
+        let _ = appDelegate.configureIfNeeded(store: store)
 
         WindowGroup("Settings", id: "settings") {
             SettingsView()
@@ -67,237 +61,260 @@ struct ClauxApp: App {
     }
 }
 
-// MARK: – Menu bar icon label
+final class ClauxStatusAppDelegate: NSObject, NSApplicationDelegate {
+    private var statusController: ClauxStatusItemController?
 
-struct MenuBarLabel: View {
-    @ObservedObject var store: AppStore
-    @State private var pulse = false
-
-    @AppStorage("showCostInMenuBar")  private var showCost:  Bool = false
-    @AppStorage("showModelInMenuBar") private var showModel: Bool = false
-
-    @Environment(\.openWindow) private var openWindow
-
-    private var isActive: Bool { store.activeSession != nil }
-
-    private var displayCost: Double {
-        if let s = store.activeSession { return s.totalCost }
-        return store.spendSummary.today
-    }
-
-    private var displayModel: String? {
-        guard showModel, let s = store.activeSession else { return nil }
-        return ModelInfo.shortName(s.model)
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ZStack {
-                if isActive {
-                    Circle()
-                        .fill(Color(nsColor: .systemGreen).opacity(0.4))
-                        .frame(width: 20, height: 20)
-                        .scaleEffect(pulse ? 2.0 : 1.0)
-                        .opacity(pulse ? 0 : 0.7)
-                        .animation(
-                            .easeOut(duration: 1.6).repeatForever(autoreverses: false),
-                            value: pulse
-                        )
-                }
-                Image(systemName: "c.circle.fill")
-                    .resizable()
-                    .frame(width: 16, height: 16)
-                    .foregroundStyle(
-                        isActive
-                            ? Color(nsColor: .systemGreen)
-                            : Color(nsColor: .controlTextColor)
-                    )
-            }
-
-            if showCost {
-                Text(Format.cost(displayCost))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color(nsColor: .controlTextColor))
-            }
-
-            if let model = displayModel {
-                Text(model)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(ModelInfo.color(store.activeSession?.model ?? ""))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(
-                        ModelInfo.color(store.activeSession?.model ?? "").opacity(0.15)
-                            .clipShape(Capsule())
-                    )
-            }
-        }
-        .onAppear {
-            pulse = true
-            clauxOpenWindow = { id in openWindow(id: id) }
-        }
-        // Zero-size overlay embedded in the SwiftUI label tree.
-        // Once it's added to the window, it walks up via superview to find
-        // NSStatusBarButton and installs the transparent right-click catcher.
-        .overlay(RightClickInstaller().frame(width: 0, height: 0))
+    func configureIfNeeded(store: AppStore) {
+        guard statusController == nil else { return }
+        statusController = ClauxStatusItemController(store: store)
     }
 }
 
-// MARK: – Zero-size installer: walks superview chain → NSStatusBarButton → intercepts clicks
+final class ClauxStatusItemController: NSObject {
+    private let store: AppStore
+    private var statusItem: NSStatusItem?
+    private let popover = NSPopover()
+    private var cancellables = Set<AnyCancellable>()
+    private var settingsWindowController: NSWindowController?
+    private var analyticsWindowController: NSWindowController?
 
-private struct RightClickInstaller: NSViewRepresentable {
-    func makeNSView(context: Context) -> InstallerView { InstallerView() }
-    func updateNSView(_ nsView: InstallerView, context: Context) {}
-}
-
-final class InstallerView: NSView {
-    private var didInstall = false
-    // Retain the handler so it isn't deallocated.
-    private var buttonHandler: StatusButtonHandler?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard !didInstall, window != nil else { return }
-        // Defer one run-loop tick so the full hierarchy is settled.
-        DispatchQueue.main.async { [weak self] in self?.install() }
-    }
-
-    private func install() {
-        guard !didInstall else { return }
-        var view: NSView? = self
-        while let current = view {
-            if let button = current as? NSStatusBarButton {
-                buttonHandler = StatusButtonHandler(button: button)
-                didInstall = true
-                return
-            }
-            view = current.superview
-        }
-    }
-}
-
-// Captures NSStatusBarButton's original action/target (SwiftUI's popover toggle),
-// then routes left-clicks back to it and right-clicks to the context menu.
-//
-// On macOS 14/15, rightMouseUp is no longer reliably delivered to a status bar
-// button's action target. We use a local event monitor as the primary path for
-// right-click detection, with the button's action as a fallback.
-final class StatusButtonHandler: NSObject {
-    private weak var button: NSStatusBarButton?
-    private let originalAction: Selector?
-    private weak var originalTarget: AnyObject?
-    private var rightClickMonitor: Any?
-
-    init(button: NSStatusBarButton) {
-        self.button         = button
-        self.originalAction = button.action
-        self.originalTarget = button.target as AnyObject?
+    init(store: AppStore) {
+        self.store = store
         super.init()
+        configurePopover()
+        configureObservers()
+        updateVisibilityAndAppearance()
+        clauxOpenWindow = { [weak self] id in
+            self?.openWindow(id: id)
+        }
+    }
 
-        button.target = self
-        button.action = #selector(handleClick(_:))
-        button.sendAction(on: [.leftMouseUp, .rightMouseDown])
+    private func configurePopover() {
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 340, height: 420)
+        popover.contentViewController = NSHostingController(
+            rootView: PopoverView()
+                .environmentObject(store)
+                .appThemed()
+        )
+    }
 
-        // Local monitor intercepts rightMouseDown before the OS can swallow it.
-        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak button] event in
-            guard let button = button,
-                  event.window == button.window else { return event }
-            DispatchQueue.main.async {
-                let menu = MenuBarContextMenu.build()
-                NSMenu.popUpContextMenu(menu, with: event, for: button)
+    private func configureObservers() {
+        store.$activeSession
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateVisibilityAndAppearance()
             }
-            return nil  // consume — prevents the button action from also firing
-        }
-    }
+            .store(in: &cancellables)
 
-    deinit {
-        if let monitor = rightClickMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
-
-    @objc private func handleClick(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else { return }
-        let isRightClick = event.type == .rightMouseDown || event.type == .rightMouseUp
-        let isControlClick = event.type == .leftMouseUp && event.modifierFlags.contains(.control)
-        if isRightClick || isControlClick {
-            let menu = MenuBarContextMenu.build()
-            NSMenu.popUpContextMenu(menu, with: event, for: sender)
-        } else {
-            if let action = originalAction {
-                NSApp.sendAction(action, to: originalTarget, from: sender)
+        store.$spendSummary
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateStatusButtonAppearance()
             }
-        }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateVisibilityAndAppearance()
+            }
+            .store(in: &cancellables)
     }
-}
 
-// MARK: – Context menu
-
-final class MenuBarContextMenu: NSObject {
-    static let shared = MenuBarContextMenu()
-
-    /// Build the menu (items target MenuBarContextMenu.shared).
-    static func build() -> NSMenu { shared.buildMenu() }
-
-    private func buildMenu() -> NSMenu {
+    private func shouldShowStatusItem() -> Bool {
         let visibility = UserDefaults.standard.string(forKey: "menuBarVisibility") ?? "always"
+        switch visibility {
+        case "when_active":
+            return store.activeSession != nil
+        case "never":
+            return false
+        default:
+            return true
+        }
+    }
 
+    private func updateVisibilityAndAppearance() {
+        if shouldShowStatusItem() {
+            ensureStatusItem()
+            updateStatusButtonAppearance()
+        } else {
+            removeStatusItem()
+        }
+    }
+
+    private func ensureStatusItem() {
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        guard let button = item.button else { return }
+        button.target = self
+        button.action = #selector(handleStatusItemClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.imagePosition = .imageLeft
+        statusItem = item
+    }
+
+    private func removeStatusItem() {
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+        guard let item = statusItem else { return }
+        NSStatusBar.system.removeStatusItem(item)
+        statusItem = nil
+    }
+
+    private func updateStatusButtonAppearance() {
+        guard let button = statusItem?.button else { return }
+
+        let isActive = store.activeSession != nil
+        let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
+        let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
+
+        let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
+        image?.isTemplate = false
+        button.image = image
+        button.contentTintColor = isActive ? .systemGreen : .labelColor
+
+        var suffix: [String] = []
+        if showCost {
+            let cost = store.activeSession?.totalCost ?? store.spendSummary.today
+            suffix.append(Format.cost(cost))
+        }
+        if showModel, let model = store.activeSession?.model {
+            suffix.append(ModelInfo.shortName(model))
+        }
+        button.title = suffix.isEmpty ? "" : " " + suffix.joined(separator: " ")
+        button.toolTip = isActive ? "Claux (active session)" : "Claux"
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else {
+            togglePopover(from: sender)
+            return
+        }
+
+        let isRightClick = event.type == .rightMouseUp || event.type == .rightMouseDown
+        let isControlClick = (event.type == .leftMouseUp || event.type == .leftMouseDown) &&
+            event.modifierFlags.contains(.control)
+
+        if isRightClick || isControlClick {
+            showContextMenu(from: sender)
+        } else {
+            togglePopover(from: sender)
+        }
+    }
+
+    private func togglePopover(from button: NSStatusBarButton) {
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        menu.addItem(make("Open Claux Dashboard",  #selector(openDashboard)))
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(contextOpenSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
-        menu.addItem(make("Settings…",             #selector(openSettings)))
-        menu.addItem(.separator())
-        menu.addItem(make("Check for Updates…",    #selector(checkForUpdates)))
-        menu.addItem(.separator())
-        menu.addItem(visibilitySubmenu(current: visibility))
-        menu.addItem(.separator())
-        menu.addItem(make("Quit Claux",            #selector(quitApp)))
 
-        return menu
+        let visibility = UserDefaults.standard.string(forKey: "menuBarVisibility") ?? "always"
+        let visibilityItem = NSMenuItem(title: "Show in Menu Bar", action: nil, keyEquivalent: "")
+        let visibilityMenu = NSMenu()
+
+        let always = NSMenuItem(title: "Always", action: #selector(contextSetAlways), keyEquivalent: "")
+        always.target = self
+        always.state = visibility == "always" ? .on : .off
+        visibilityMenu.addItem(always)
+
+        let whenActive = NSMenuItem(title: "When session is active", action: #selector(contextSetWhenActive), keyEquivalent: "")
+        whenActive.target = self
+        whenActive.state = visibility == "when_active" ? .on : .off
+        visibilityMenu.addItem(whenActive)
+
+        visibilityItem.submenu = visibilityMenu
+        menu.addItem(visibilityItem)
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit Claux", action: #selector(contextQuit), keyEquivalent: "")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: -1, y: button.bounds.maxY + 4), in: button)
     }
 
-    private func make(_ title: String, _ sel: Selector) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: sel, keyEquivalent: "")
-        i.target = self; i.isEnabled = true
-        return i
+    @objc private func contextOpenSettings() {
+        openWindow(id: "settings")
     }
 
-    private func visibilitySubmenu(current: String) -> NSMenuItem {
-        let sub  = NSMenu()
-        let opts: [(String, String, Selector)] = [
-            ("Always",                      "always",      #selector(setAlways)),
-            ("When Claude Code is running", "when_active", #selector(setWhenActive)),
-            ("Never",                       "never",       #selector(setNever)),
-        ]
-        for (title, tag, sel) in opts {
-            let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
-            mi.target = self; mi.isEnabled = true
-            mi.state  = current == tag ? .on : .off
-            sub.addItem(mi)
+    @objc private func contextSetAlways() {
+        UserDefaults.standard.set("always", forKey: "menuBarVisibility")
+    }
+
+    @objc private func contextSetWhenActive() {
+        UserDefaults.standard.set("when_active", forKey: "menuBarVisibility")
+    }
+
+    @objc private func contextQuit() {
+        NSApp.terminate(nil)
+    }
+
+    private func openWindow(id: String) {
+        switch id {
+        case "settings":
+            showSettingsWindow()
+        case "analytics":
+            showAnalyticsWindow()
+        default:
+            break
         }
-        let parent = NSMenuItem(title: "Show in Menu Bar", action: nil, keyEquivalent: "")
-        parent.submenu = sub
-        return parent
     }
 
-    @objc private func openDashboard()  { NSWorkspace.shared.open(URL(string: "https://claux.app/dashboard")!) }
-    @objc private func openSettings()   { NSApp.activate(ignoringOtherApps: true); clauxOpenWindow?("settings") }
-    @objc private func checkForUpdates() {
-        let a = NSAlert()
-        a.messageText     = "Claux is up to date"
-        a.informativeText = "You're running version \(AppVersion.current), which is the latest."
-        a.alertStyle      = .informational
-        a.addButton(withTitle: "OK")
+    private func showSettingsWindow() {
+        let controller = settingsWindowController ?? makeSettingsWindowController()
+        settingsWindowController = controller
         NSApp.activate(ignoringOtherApps: true)
-        a.runModal()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
     }
-    @objc private func setAlways()     { save("always") }
-    @objc private func setWhenActive() { save("when_active") }
-    @objc private func setNever()      { save("never") }
-    @objc private func quitApp()       { NSApp.terminate(nil) }
 
-    private func save(_ value: String) { UserDefaults.standard.set(value, forKey: "menuBarVisibility") }
+    private func showAnalyticsWindow() {
+        let controller = analyticsWindowController ?? makeAnalyticsWindowController()
+        analyticsWindowController = controller
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func makeSettingsWindowController() -> NSWindowController {
+        let root = SettingsView()
+            .environmentObject(store)
+            .appThemed()
+        let host = NSHostingController(rootView: root)
+        let window = NSWindow(contentViewController: host)
+        window.title = "Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 560, height: 620))
+        window.center()
+        window.isReleasedWhenClosed = false
+        return NSWindowController(window: window)
+    }
+
+    private func makeAnalyticsWindowController() -> NSWindowController {
+        let root = AnalyticsView()
+            .environmentObject(store)
+            .appThemed()
+        let host = NSHostingController(rootView: root)
+        let window = NSWindow(contentViewController: host)
+        window.title = "Analytics"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 820, height: 640))
+        window.center()
+        window.isReleasedWhenClosed = false
+        return NSWindowController(window: window)
+    }
 }

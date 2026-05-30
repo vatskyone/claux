@@ -119,7 +119,11 @@ struct PopoverView: View {
 
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: "analytics")
+                    if let open = clauxOpenWindow {
+                        open("analytics")
+                    } else {
+                        openWindow(id: "analytics")
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -192,7 +196,11 @@ struct PopoverView: View {
 
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
-                    openWindow(id: "settings")
+                    if let open = clauxOpenWindow {
+                        open("settings")
+                    } else {
+                        openWindow(id: "settings")
+                    }
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 13, weight: .medium))

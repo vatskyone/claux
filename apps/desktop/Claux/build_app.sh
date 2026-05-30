@@ -11,7 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY_NAME="Claux"
 APP_NAME="Claux"
 BUNDLE_ID="com.claux.app"
-VERSION="0.9.4"
+VERSION="$(sed -nE 's/^[[:space:]]*static let current = "([^"]+)"/\1/p' "$SCRIPT_DIR/Sources/Claux/Design.swift" | head -n1)"
+VERSION="${VERSION:-0.0.0}"
 CONFIG="${1:-debug}"
 LAUNCH="${1:-}"
 
@@ -64,6 +65,6 @@ echo "✅  Bundle: $APP_DIR"
 
 # ── 4. Launch if requested ────────────────────────────────────────────────────
 if [[ "$LAUNCH" == "run" || "$CONFIG" == "run" ]]; then
-    echo "▶ Launching $APP_NAME…"
+    echo "▶ Launching ${APP_NAME}..."
     open "$APP_DIR"
 fi
