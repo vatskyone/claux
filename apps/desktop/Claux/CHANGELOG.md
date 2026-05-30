@@ -2,6 +2,13 @@
 
 ---
 
+## [1.7.2] — 2026-05-30
+
+### Bug Fixes
+- **Popover re-centered under icon** (`ClauxApp.swift`) — reverted the left-anchor positioning introduced in v1.7.1; the popover now drops down centered beneath the menu bar icon, matching v1.6.4 behavior.
+
+---
+
 ## [1.7.1] — 2026-05-30
 
 ### Improvements

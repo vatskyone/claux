@@ -1,5 +1,0 @@
-1. Add a session replay feature that lets users scrub through a timeline of tool calls and responses from past Claude Code sessions, making it easy to audit or revisit complex multi-step tasks.
-
-2. Introduce a cost forecasting panel that estimates projected monthly spend based on recent session patterns, helping users stay within budget before bills arrive.
-
-3. Support exportable session reports in Markdown or JSON format so developers can share annotated Claude Code session logs with teammates or include them in project documentation.

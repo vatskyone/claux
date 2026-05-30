@@ -70,10 +70,15 @@ final class ClauxStatusAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+final class ClauxPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 final class ClauxStatusItemController: NSObject {
     private let store: AppStore
     private var statusItem: NSStatusItem?
-    private let popover = NSPopover()
+    private var panel: ClauxPanel?
+    private var panelDismissMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private var settingsWindowController: NSWindowController?
     private var analyticsWindowController: NSWindowController?
@@ -81,7 +86,7 @@ final class ClauxStatusItemController: NSObject {
     init(store: AppStore) {
         self.store = store
         super.init()
-        configurePopover()
+        configurePanel()
         configureObservers()
         updateVisibilityAndAppearance()
         clauxOpenWindow = { [weak self] id in
@@ -89,14 +94,47 @@ final class ClauxStatusItemController: NSObject {
         }
     }
 
-    private func configurePopover() {
-        popover.behavior = .transient
-        popover.contentSize = NSSize(width: 340, height: 420)
-        popover.contentViewController = NSHostingController(
+    deinit {
+        if let monitor = panelDismissMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    private func configurePanel() {
+        let host = NSHostingController(
             rootView: PopoverView()
                 .environmentObject(store)
                 .appThemed()
         )
+        let panel = ClauxPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 420),
+            styleMask: [.nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentViewController = host
+        panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.hidesOnDeactivate = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.cornerRadius = 11
+        panel.contentView?.layer?.masksToBounds = true
+        panel.isReleasedWhenClosed = false
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.setContentSize(NSSize(width: 340, height: 420))
+        self.panel = panel
+
+        panelDismissMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.dismissPanelIfNeeded()
+        }
     }
 
     private func configureObservers() {
@@ -155,9 +193,7 @@ final class ClauxStatusItemController: NSObject {
     }
 
     private func removeStatusItem() {
-        if popover.isShown {
-            popover.performClose(nil)
-        }
+        closePanel()
         guard let item = statusItem else { return }
         NSStatusBar.system.removeStatusItem(item)
         statusItem = nil
@@ -189,7 +225,7 @@ final class ClauxStatusItemController: NSObject {
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else {
-            togglePopover(from: sender)
+            togglePanel(from: sender)
             return
         }
 
@@ -200,28 +236,52 @@ final class ClauxStatusItemController: NSObject {
         if isRightClick || isControlClick {
             showContextMenu(from: sender)
         } else {
-            togglePopover(from: sender)
+            togglePanel(from: sender)
         }
     }
 
-    private func togglePopover(from button: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(nil)
+    private func togglePanel(from button: NSStatusBarButton) {
+        guard let panel else { return }
+        if panel.isVisible {
+            closePanel()
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            alignPanelToMenuBar(from: button)
             NSApp.activate(ignoringOtherApps: true)
-            // Align right edge of popover with left edge of status button
-            if let buttonWindow = button.window,
-               let popoverWindow = popover.contentViewController?.view.window {
-                let btnInScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-                var f = popoverWindow.frame
-                f.origin.x = btnInScreen.minX - popover.contentSize.width
-                popoverWindow.setFrameOrigin(f.origin)
-            }
+            panel.makeKeyAndOrderFront(nil)
         }
+    }
+
+    private func closePanel() {
+        panel?.orderOut(nil)
+    }
+
+    private func alignPanelToMenuBar(from button: NSStatusBarButton) {
+        guard let panel, let buttonWindow = button.window else { return }
+
+        let buttonRectInScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        var frame = panel.frame
+        frame.origin.x = buttonRectInScreen.minX
+        if let screen = buttonWindow.screen {
+            frame.origin.y = screen.visibleFrame.maxY - frame.height
+        }
+        panel.setFrame(frame, display: true)
+    }
+
+    private func dismissPanelIfNeeded() {
+        guard let panel, panel.isVisible else { return }
+        let mouse = NSEvent.mouseLocation
+        if panel.frame.contains(mouse) { return }
+        if let statusRect = statusButtonFrameInScreen(), statusRect.contains(mouse) { return }
+        closePanel()
+    }
+
+    private func statusButtonFrameInScreen() -> NSRect? {
+        guard let button = statusItem?.button, let buttonWindow = button.window else { return nil }
+        return buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private func showContextMenu(from button: NSStatusBarButton) {
+        closePanel()
         let menu = NSMenu()
         menu.autoenablesItems = false
 
