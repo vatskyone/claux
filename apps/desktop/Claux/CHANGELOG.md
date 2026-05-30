@@ -2,6 +2,15 @@
 
 ---
 
+## [1.7.1] — 2026-05-30
+
+### Improvements
+- **Analytics default range 7D** (`AnalyticsView.swift`) — both the full Analytics window and the compact popover Analytics tab now open on the 7-day view instead of 30 days.
+- **"Open full Analytics window" link in blue** (`PopoverView.swift`) — the link at the bottom of the Analytics tab now uses `systemBlue` to match other interactive text in the UI, replacing the previous tertiary-label grey.
+- **Popover anchored to left of menu bar icon** (`ClauxApp.swift`) — the popover now positions its right edge flush with the left edge of the status item button, so it drops down to the left of the icon rather than centred beneath it.
+
+---
+
 ## [1.7.0] — 2026-05-30
 
 ### New Features

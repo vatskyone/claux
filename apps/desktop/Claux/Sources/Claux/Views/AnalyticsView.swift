@@ -3,7 +3,7 @@ import Charts
 
 struct AnalyticsView: View {
     @EnvironmentObject var store: AppStore
-    @State private var chartRange: ChartRange = .thirtyDays
+    @State private var chartRange: ChartRange = .sevenDays
     @State private var selectedDay: DailySpend?
     /// Raw cursor X position within the full chart frame (used to position the tooltip).
     @State private var hoverX: CGFloat = 0
@@ -305,7 +305,7 @@ struct AnalyticsView: View {
 
 struct CompactAnalyticsView: View {
     @EnvironmentObject var store: AppStore
-    @State private var chartRange: AnalyticsView.ChartRange = .thirtyDays
+    @State private var chartRange: AnalyticsView.ChartRange = .sevenDays
     @State private var selectedDay: DailySpend?
     @State private var hoverX: CGFloat = 0
 

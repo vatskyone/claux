@@ -210,6 +210,14 @@ final class ClauxStatusItemController: NSObject {
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
+            // Align right edge of popover with left edge of status button
+            if let buttonWindow = button.window,
+               let popoverWindow = popover.contentViewController?.view.window {
+                let btnInScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+                var f = popoverWindow.frame
+                f.origin.x = btnInScreen.minX - popover.contentSize.width
+                popoverWindow.setFrameOrigin(f.origin)
+            }
         }
     }
 

@@ -131,7 +131,7 @@ struct PopoverView: View {
                         Text("Open full Analytics window")
                             .font(.system(size: 11))
                     }
-                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .foregroundStyle(Color(nsColor: .systemBlue))
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
