@@ -321,5 +321,5 @@ Claux is the first native macOS client for that gap. It's built by developers wh
 <p align="center">
   Built with Swift · Designed for macOS · Zero dependencies · Zero backend
   <br />
-  <a href="https://github.com/harukifujimoto/claux">github.com/harukifujimoto/claux</a>
+  <a href="https://github.com/vatskyone/claux">github.com/vatksyone/claux</a>
 </p>
