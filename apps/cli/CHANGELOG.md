@@ -2,6 +2,28 @@
 
 ---
 
+## [0.7.2] — 2026-06-01
+
+### CLAUDE.md workflow
+
+- Added `claux claudemd generate`:
+  - creates a high-signal `CLAUDE.md` starter from local repo structure
+  - supports `--project`, `--write`, `--force`, and `--json`
+- Added `claux claudemd improve`:
+  - reads existing `CLAUDE.md`, fills missing core sections, and preserves existing content
+  - supports preview mode (default) and write mode with optional `--backup`
+  - supports `--project`, `--write`, `--backup`, and `--json`
+
+### Reliability
+
+- Added tests for CLAUDE.md generation and improvement flows.
+- Improved error messaging for missing/invalid project paths and missing `CLAUDE.md` in improve mode.
+
+### Docs
+
+- Updated CLI README command surface and architecture map for the new `claudemd` command set.
+- Bumped crate version to `0.7.2`.
+
 ## [0.7.1] — 2026-06-01
 
 ### Reliability hardening

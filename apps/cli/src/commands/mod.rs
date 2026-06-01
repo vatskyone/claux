@@ -1,6 +1,7 @@
 pub mod account;
 pub mod analytics;
 pub mod checkpoint;
+pub mod claudemd;
 pub mod config;
 pub mod doctor;
 pub mod export;

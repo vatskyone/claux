@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?style=flat-square" />
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/version-0.7.1-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-0.7.2-informational?style=flat-square" />
 </p>
 
 ---
@@ -274,6 +274,27 @@ claux doctor --json
 
 ---
 
+### `claux claudemd`
+
+Generate or improve a project-level `CLAUDE.md`.
+
+```bash
+claux claudemd generate --project /path/to/repo
+claux claudemd generate --project /path/to/repo --write
+claux claudemd generate --project /path/to/repo --write --force
+
+claux claudemd improve --project /path/to/repo
+claux claudemd improve --project /path/to/repo --write
+claux claudemd improve --project /path/to/repo --write --backup
+```
+
+Notes:
+- `generate` creates a starter file from local repository structure and command conventions.
+- `improve` requires an existing `CLAUDE.md` and fills missing high-signal sections while preserving existing content.
+- Both subcommands support `--json` for machine-readable output.
+
+---
+
 ### `claux tui`
 
 Full-screen ratatui TUI dashboard. Press `q` to quit, `←`/`→` (or `h`/`l`) to switch tabs, `r` to refresh.
@@ -440,6 +461,8 @@ apps/cli/src/
 │                     # skill_rating() — uses → 1–5 star rating
 ├── config.rs         # load_claux_config() / save_claux_config()
 │                     # backed by ~/.claude/claux/config.json
+├── claudemd.rs       # CLAUDE.md generation/improvement helpers
+├── checkpoints.rs    # checkpoint persistence + context writer
 ├── metrics.rs        # local-only usage metrics counters
 ├── usage.rs          # shared usage-window/progress state helpers
 ├── tags.rs           # load_tags() / save_tag()
@@ -454,7 +477,9 @@ apps/cli/src/
     ├── account.rs    # claux account
     ├── skills.rs     # claux skills list|new|export|import
     ├── config.rs     # claux config get|set|unset|init
+    ├── claudemd.rs   # claux claudemd generate|improve
     ├── doctor.rs     # claux doctor
+    ├── checkpoint.rs # claux checkpoint save|list|load|delete
     └── tui.rs        # ratatui TUI — App state machine · all draw_* functions
 ```
 
@@ -554,7 +579,6 @@ Model ID matching uses substring (`opus` / `sonnet` / `haiku`) so new model vers
 - [ ] Linux binary releases
 - [ ] Homebrew formula
 - [ ] Automated pricing table updates
-- [ ] `claux doctor` — diagnose parse failures and missing session data
 
 ---
 

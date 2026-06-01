@@ -1,5 +1,6 @@
 mod account;
 mod checkpoints;
+mod claudemd;
 mod commands;
 mod config;
 mod format;
@@ -18,6 +19,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 
 use commands::checkpoint::CheckpointAction;
+use commands::claudemd::ClaudeMdAction;
 use commands::config::ConfigAction;
 use commands::export::ExportFormat;
 use commands::skills::SkillsAction;
@@ -127,6 +129,12 @@ enum Commands {
         action: ConfigAction,
     },
 
+    /// Generate or manage project CLAUDE.md.
+    Claudemd {
+        #[command(subcommand)]
+        action: ClaudeMdAction,
+    },
+
     /// Inspect local environment, paths, and session parse health.
     Doctor {
         /// Output as JSON.
@@ -181,6 +189,9 @@ fn run_command(command: Commands) -> Result<()> {
     if let Commands::Config { action } = &command {
         return commands::config::run(action);
     }
+    if let Commands::Claudemd { action } = &command {
+        return commands::claudemd::run(action);
+    }
     if let Commands::Checkpoint { action } = &command {
         return commands::checkpoint::run(action);
     }
@@ -216,6 +227,7 @@ fn run_command(command: Commands) -> Result<()> {
         | Commands::Account
         | Commands::Skills { .. }
         | Commands::Config { .. }
+        | Commands::Claudemd { .. }
         | Commands::Checkpoint { .. }
         | Commands::Doctor { .. } => unreachable!(),
     }
@@ -234,6 +246,7 @@ fn metric_name(command: &Commands) -> &'static str {
         Commands::Account => "account",
         Commands::Skills { .. } => "skills",
         Commands::Config { .. } => "config",
+        Commands::Claudemd { .. } => "claudemd",
         Commands::Doctor { .. } => "doctor",
         Commands::Checkpoint { .. } => "checkpoint",
         Commands::Tui => "tui",
