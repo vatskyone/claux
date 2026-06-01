@@ -1,6 +1,8 @@
 use anyhow::Result;
+use owo_colors::OwoColorize;
 
 use crate::models::ClaudeSession;
+use crate::render::{section, success, warning};
 use crate::tags;
 
 pub fn run(
@@ -18,19 +20,31 @@ pub fn run(
 
     match matching.len() {
         0 => {
+            eprintln!("{}", section("Tag"));
             eprintln!(
-                "No session found with ID starting with '{}'",
-                session_prefix
+                "{}",
+                warning(format!(
+                    "No session found with ID starting with '{}'",
+                    session_prefix
+                ))
             );
             return Ok(());
         }
         n if n > 1 => {
+            eprintln!("{}", section("Tag"));
             eprintln!(
-                "Ambiguous — {} sessions start with '{}'. Use more characters.",
-                n, session_prefix
+                "{}",
+                warning(format!(
+                    "Ambiguous: {} sessions start with '{}'. Use more characters.",
+                    n, session_prefix
+                ))
             );
             for s in &matching {
-                eprintln!("  {}  {}", &s.id[..s.id.len().min(16)], s.display_path());
+                eprintln!(
+                    "  {}  {}",
+                    (&s.id[..s.id.len().min(16)]).to_string().dimmed(),
+                    s.display_path()
+                );
             }
             return Ok(());
         }
@@ -42,27 +56,37 @@ pub fn run(
 
     if remove {
         tags::save_tag(&s.id, "")?;
+        println!("{}", section("Tag"));
         println!(
-            "Removed tag from session {}…  ({})",
-            id_short,
-            s.display_path()
+            "{}",
+            success(format!(
+                "Removed tag from session {}… ({})",
+                id_short,
+                s.display_path()
+            ))
         );
         return Ok(());
     }
 
     if let Some(lbl) = label {
         tags::save_tag(&s.id, lbl)?;
-        println!("Tagged session {}…  →  [{}]", id_short, lbl.trim());
+        println!("{}", section("Tag"));
+        println!(
+            "{}",
+            success(format!("Tagged session {}… -> [{}]", id_short, lbl.trim()))
+        );
     } else {
+        println!("{}", section("Tag"));
         // Show current tag
         let current = s.tag.as_deref().unwrap_or("");
         if current.is_empty() {
+            println!("{}", warning(format!("Session {}… has no tag", id_short)));
             println!(
-                "Session {}…  (no tag)  — use: claux tag {} <label>",
-                id_short, session_prefix
+                "{}",
+                format!("  Use: claux tag {} <label>", session_prefix).dimmed()
             );
         } else {
-            println!("Session {}…  [{}]", id_short, current);
+            println!("Session {}… [{}]", id_short, current);
         }
     }
 

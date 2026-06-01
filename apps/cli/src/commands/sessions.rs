@@ -1,9 +1,10 @@
 use anyhow::Result;
+use owo_colors::OwoColorize;
 
 use crate::format;
 use crate::metrics::record_empty_state;
 use crate::models::ClaudeSession;
-use crate::render::{active_dot, cost_colored, make_table, model_colored};
+use crate::render::{active_dot, cost_colored, make_table, model_colored, section, warning};
 
 pub fn run(sessions: &[ClaudeSession], limit: usize, json: bool) -> Result<()> {
     let items: Vec<&ClaudeSession> = sessions.iter().take(limit).collect();
@@ -19,10 +20,13 @@ pub fn run(sessions: &[ClaudeSession], limit: usize, json: bool) -> Result<()> {
 
     if items.is_empty() {
         record_empty_state("no_data_yet");
-        println!("No sessions found.");
+        println!("{}", section("Sessions"));
+        println!("{}", warning("No sessions found"));
+        println!("{}", "  Start a session to populate history.".dimmed());
         return Ok(());
     }
 
+    println!("{}", section("Sessions"));
     let mut table = make_table(&["", "When", "Duration", "Model", "Project", "Cost"]);
 
     for s in &items {

@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::fs;
 
 use crate::models::ClaudeSession;
+use crate::render::success;
 
 #[derive(Clone, Copy, PartialEq, clap::ValueEnum)]
 pub enum ExportFormat {
@@ -31,7 +32,10 @@ pub fn run(
     match output {
         Some(path) => {
             fs::write(path, &content)?;
-            eprintln!("Exported {} sessions to {}", items.len(), path);
+            eprintln!(
+                "{}",
+                success(format!("Exported {} sessions to {}", items.len(), path))
+            );
         }
         None => print!("{}", content),
     }

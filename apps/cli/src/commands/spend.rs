@@ -3,7 +3,7 @@ use owo_colors::OwoColorize;
 
 use crate::format;
 use crate::models::ClaudeSession;
-use crate::render::trend;
+use crate::render::{section, trend};
 use crate::spend::compute_spend;
 
 pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
@@ -17,7 +17,7 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
     let col1 = 12usize;
     let col2 = 10usize;
 
-    println!("{}", "─── Spend Summary ───────────────────────".dimmed());
+    println!("{}", section("Spend"));
 
     // Today
     println!(

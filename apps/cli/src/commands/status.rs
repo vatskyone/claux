@@ -3,7 +3,7 @@ use owo_colors::OwoColorize;
 
 use crate::metrics::record_empty_state;
 use crate::models::ClaudeSession;
-use crate::render::{context_bar, cost_colored, model_colored};
+use crate::render::{context_bar, cost_colored, kv, model_colored, section, warning};
 use crate::{format, render};
 
 pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
@@ -21,7 +21,12 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
     match active {
         None => {
             record_empty_state("no_active_session");
-            println!("{}", "○  No active session".dimmed());
+            println!("{}", section("Status"));
+            println!("{}", warning("No active session"));
+            println!(
+                "{}",
+                "  Start a Claude/Codex run, then execute `claux` again.".dimmed()
+            );
         }
         Some(s) => {
             let dot = render::active_dot(true);
@@ -29,22 +34,11 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
             let path = s.display_path();
             let model = format::model_short_name(&s.model);
 
-            // Header line
-            println!(
-                "{}  {}  {}  {}",
-                dot,
-                "Active Session".bold(),
-                "·".dimmed(),
-                dur.dimmed()
-            );
-
-            // Path + model
-            println!(
-                "   {}  {}  {}",
-                path.cyan().bold(),
-                "·".dimmed(),
-                model_colored(&model)
-            );
+            println!("{}", section("Status"));
+            println!("{}  {}", dot, "Active session".bold());
+            println!("{}", kv("Project", path.cyan().bold().to_string()));
+            println!("{}", kv("Duration", dur));
+            println!("{}", kv("Model", model_colored(&model)));
 
             // Cost row
             let cost = cost_colored(s.total_cost);
@@ -52,20 +46,17 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
             let ctx = context_bar(s.context_health_fraction(), 10);
             let cache = format!("{:.0}% cache", s.token_usage.cache_hit_rate() * 100.0);
 
-            println!(
-                "   Cost {}   Burn {}   Context {}   {}",
-                cost,
-                burn.dimmed(),
-                ctx,
-                cache.dimmed()
-            );
+            println!("{}", kv("Cost", cost));
+            println!("{}", kv("Burn rate", burn));
+            println!("{}", kv("Context", ctx));
+            println!("{}", kv("Cache", cache));
 
             // Tokens
             let total_tok = s.token_usage.input_tokens
                 + s.token_usage.output_tokens
                 + s.token_usage.cache_read_tokens
                 + s.token_usage.cache_write_tokens;
-            println!("   {} tokens", format::tokens(total_tok).dimmed());
+            println!("{}", kv("Tokens", format::tokens(total_tok)));
 
             if let Some(score) = s.claudemd_score {
                 let label = if score >= 70 {
@@ -75,7 +66,7 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
                 } else {
                     "Poor".red().to_string()
                 };
-                println!("   CLAUDE.md quality: {} ({})", score, label);
+                println!("{}", kv("CLAUDE.md", format!("{} ({})", score, label)));
             }
         }
     }

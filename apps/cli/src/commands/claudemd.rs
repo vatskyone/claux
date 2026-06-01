@@ -1,4 +1,5 @@
 use anyhow::Result;
+use owo_colors::OwoColorize;
 use serde_json::json;
 use std::fs;
 
@@ -8,6 +9,7 @@ use crate::claudemd::{
 };
 use crate::monitor::{load_sessions, SessionCache};
 use crate::parser::score_claudemd_detailed;
+use crate::render::{kv, section, success};
 
 #[derive(clap::Subcommand)]
 pub enum ClaudeMdAction {
@@ -69,10 +71,14 @@ pub fn run(action: &ClaudeMdAction) -> Result<()> {
                     });
                     println!("{}", serde_json::to_string_pretty(&val)?);
                 } else {
-                    println!("Wrote {}", out.display());
-                    println!("Estimated score: {}/100", analysis.score);
+                    println!("{}", section("CLAUDE.md"));
+                    println!("{}", success(format!("Wrote {}", out.display())));
+                    println!(
+                        "{}",
+                        kv("estimated score", format!("{}/100", analysis.score))
+                    );
                     if !analysis.suggestions.is_empty() {
-                        println!("Next improvements:");
+                        println!("{}", "Next improvements:".bold());
                         for s in &analysis.suggestions {
                             println!("  - {}", s);
                         }
@@ -93,8 +99,12 @@ pub fn run(action: &ClaudeMdAction) -> Result<()> {
                 });
                 println!("{}", serde_json::to_string_pretty(&val)?);
             } else {
+                println!("{}", section("CLAUDE.md Preview"));
                 println!("{}", generated.content);
-                eprintln!("\nEstimated score: {}/100", analysis.score);
+                eprintln!(
+                    "\n{}",
+                    kv("estimated score", format!("{}/100", analysis.score))
+                );
                 if !analysis.suggestions.is_empty() {
                     eprintln!("Potential improvements:");
                     for s in &analysis.suggestions {
@@ -144,34 +154,58 @@ pub fn run(action: &ClaudeMdAction) -> Result<()> {
                 });
                 println!("{}", serde_json::to_string_pretty(&val)?);
             } else if *write {
+                println!("{}", section("CLAUDE.md"));
                 println!(
-                    "Updated {} (score: {} -> {}, delta: {:+})",
-                    claudemd_path(&project_path).display(),
-                    before_score,
-                    after_score,
-                    after_score as i32 - before_score as i32
+                    "{}",
+                    success(format!(
+                        "Updated {}",
+                        claudemd_path(&project_path).display()
+                    ))
+                );
+                println!(
+                    "{}",
+                    kv(
+                        "score",
+                        format!(
+                            "{} -> {} (delta: {:+})",
+                            before_score,
+                            after_score,
+                            after_score as i32 - before_score as i32
+                        )
+                    )
                 );
                 if *backup {
                     println!(
-                        "Backup: {}",
-                        claudemd_path(&project_path)
-                            .with_extension("md.bak")
-                            .display()
+                        "{}",
+                        kv(
+                            "backup",
+                            claudemd_path(&project_path)
+                                .with_extension("md.bak")
+                                .display()
+                                .to_string()
+                        )
                     );
                 }
                 if !after_analysis.suggestions.is_empty() {
-                    println!("Remaining improvements:");
+                    println!("{}", "Remaining improvements:".bold());
                     for s in &after_analysis.suggestions {
                         println!("  - {}", s);
                     }
                 }
             } else {
+                println!("{}", section("CLAUDE.md Preview"));
                 println!("{}", improved.content);
                 eprintln!(
-                    "\nScore: {} -> {} (delta: {:+})",
-                    before_score,
-                    after_score,
-                    after_score as i32 - before_score as i32
+                    "\n{}",
+                    kv(
+                        "score",
+                        format!(
+                            "{} -> {} (delta: {:+})",
+                            before_score,
+                            after_score,
+                            after_score as i32 - before_score as i32
+                        )
+                    )
                 );
                 if !after_analysis.suggestions.is_empty() {
                     eprintln!("Remaining improvements:");

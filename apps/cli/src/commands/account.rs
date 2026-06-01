@@ -1,21 +1,22 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use comfy_table::{Cell, Color, Table};
+use comfy_table::Cell;
 use owo_colors::OwoColorize;
 
 use crate::account::{load_account_info, load_skill_usage};
+use crate::render::{kv, make_table, section, warning};
 use crate::skills::skill_rating;
 
 pub fn run() -> Result<()> {
     let Some(info) = load_account_info() else {
-        eprintln!("Could not read account info from ~/.claude.json");
+        eprintln!(
+            "{}",
+            warning("Could not read account info from ~/.claude.json")
+        );
         return Ok(());
     };
 
-    // ── Account info card ──────────────────────────────────────────────────────
-    println!();
-    println!("{}", "  Account".bold());
-    println!();
+    println!("{}", section("Account"));
 
     let plan_label = plan_display(&info.plan_type);
     let rows: &[(&str, &str)] = &[
@@ -28,41 +29,35 @@ pub fn run() -> Result<()> {
         ("Rate tier", &info.rate_limit_tier),
     ];
     for (label, value) in rows {
-        println!("  {:<16} {}", format!("{}:", label).dimmed(), value);
+        println!("{}", kv(label, value));
     }
 
     if let Some(created) = parse_date(&info.account_created) {
-        println!("  {:<16} {}", "Account since:".dimmed(), created);
+        println!("{}", kv("Account since", created));
     }
     if let Some(sub) = &info.sub_created {
         if let Some(subdate) = parse_date(sub) {
-            println!("  {:<16} {}", "Subscribed since:".dimmed(), subdate);
+            println!("{}", kv("Subscribed since", subdate));
         }
     }
     println!(
-        "  {:<16} {}",
-        "Extra usage:".dimmed(),
-        if info.has_extra_usage {
-            "enabled".green().to_string()
-        } else {
-            "disabled".dimmed().to_string()
-        }
+        "{}",
+        kv(
+            "Extra usage",
+            if info.has_extra_usage {
+                "enabled".green().to_string()
+            } else {
+                "disabled".dimmed().to_string()
+            },
+        )
     );
 
-    // ── Skill usage table ──────────────────────────────────────────────────────
     let usage = load_skill_usage();
     if !usage.is_empty() {
         println!();
-        println!("{}", "  Skills".bold());
-        println!();
+        println!("{}", section("Account · Skills"));
 
-        let mut table = Table::new();
-        table.set_header(vec![
-            Cell::new("Skill").fg(Color::Grey),
-            Cell::new("Uses").fg(Color::Grey),
-            Cell::new("Last used").fg(Color::Grey),
-            Cell::new("Rating").fg(Color::Grey),
-        ]);
+        let mut table = make_table(&["Skill", "Uses", "Last used", "Rating"]);
 
         let mut rows: Vec<(String, usize, Option<u64>)> =
             usage.into_iter().map(|(n, (c, l))| (n, c, l)).collect();

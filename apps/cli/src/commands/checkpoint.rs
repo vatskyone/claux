@@ -1,5 +1,6 @@
 use anyhow::Result;
-use comfy_table::{Cell, Color, Table};
+use comfy_table::Cell;
+use owo_colors::OwoColorize;
 
 use crate::checkpoints::{
     delete_checkpoint, find_checkpoint, generate_context_md, infer_project_path, load_checkpoints,
@@ -7,6 +8,7 @@ use crate::checkpoints::{
 };
 use crate::models::ClaudeSession;
 use crate::monitor::{load_sessions, SessionCache};
+use crate::render::{kv, make_table, section, success, warning};
 
 #[derive(clap::Subcommand)]
 pub enum CheckpointAction {
@@ -61,43 +63,48 @@ fn cmd_save(sessions: &[ClaudeSession], project_path: &str, name: Option<&str>) 
     };
 
     let cp = save_checkpoint(project_path, sessions, &label)?;
-    println!("Saved checkpoint  {}  \"{}\"", cp.id, cp.name);
+    println!("{}", section("Checkpoint"));
+    println!(
+        "{}",
+        success(format!("Saved checkpoint {} \"{}\"", cp.id, cp.name))
+    );
     if let Some(b) = &cp.git_branch {
-        println!(
-            "  Branch:  {}  {}",
-            b,
-            cp.git_commit
-                .as_deref()
-                .map(|c| &c[..c.len().min(8)])
-                .unwrap_or("")
-        );
+        let commit = cp
+            .git_commit
+            .as_deref()
+            .map(|c| &c[..c.len().min(8)])
+            .unwrap_or("");
+        println!("{}", kv("branch", format!("{} {}", b, commit)));
     }
     println!(
-        "  Cost to date:  ${:.2}  ({} sessions)",
-        cp.cost_total_usd, cp.total_sessions
+        "{}",
+        kv(
+            "cost to date",
+            format!("${:.2} ({} sessions)", cp.cost_total_usd, cp.total_sessions)
+        )
     );
     if !cp.files_changed.is_empty() {
-        println!("  Changed files:  {}", cp.files_changed.len());
+        println!(
+            "{}",
+            kv("changed files", cp.files_changed.len().to_string())
+        );
     }
     Ok(())
 }
 
 fn cmd_list(project_path: &str) -> Result<()> {
     let checkpoints = load_checkpoints(project_path);
+    println!("{}", section("Checkpoint"));
     if checkpoints.is_empty() {
-        println!("No checkpoints for this project. Run `claux checkpoint save` to create one.");
+        println!("{}", warning("No checkpoints for this project"));
+        println!(
+            "{}",
+            "  Run `claux checkpoint save` to create one.".dimmed()
+        );
         return Ok(());
     }
 
-    let mut table = Table::new();
-    table.set_header(vec![
-        Cell::new("ID").fg(Color::Grey),
-        Cell::new("Name").fg(Color::Grey),
-        Cell::new("Saved").fg(Color::Grey),
-        Cell::new("Branch").fg(Color::Grey),
-        Cell::new("Cost").fg(Color::Grey),
-        Cell::new("Files").fg(Color::Grey),
-    ]);
+    let mut table = make_table(&["ID", "Name", "Saved", "Branch", "Cost", "Files"]);
 
     for cp in &checkpoints {
         let date = cp
@@ -131,13 +138,14 @@ fn cmd_load(project_path: &str, id_prefix: &str, do_write: bool) -> Result<()> {
 
     if do_write {
         write_context_md(project_path, cp)?;
-        eprintln!("Wrote .claux/CONTEXT.md");
+        eprintln!("{}", success("Wrote .claux/CONTEXT.md"));
     }
     Ok(())
 }
 
 fn cmd_delete(project_path: &str, id_prefix: &str) -> Result<()> {
     delete_checkpoint(project_path, id_prefix)?;
-    println!("Deleted checkpoint {}", id_prefix);
+    println!("{}", section("Checkpoint"));
+    println!("{}", success(format!("Deleted checkpoint {}", id_prefix)));
     Ok(())
 }

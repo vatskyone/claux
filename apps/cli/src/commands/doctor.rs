@@ -1,4 +1,5 @@
 use anyhow::Result;
+use owo_colors::OwoColorize;
 use serde::Serialize;
 use serde_json::json;
 use std::fs;
@@ -7,6 +8,7 @@ use crate::config::{active_sessions_dir, projects_root_dir};
 use crate::metrics::record_empty_state;
 use crate::monitor::{find_jsonl_files, load_active_ids};
 use crate::parser::parse_session;
+use crate::render::{kv, section, warning};
 
 #[derive(Debug, Serialize)]
 struct ParseHealth {
@@ -83,30 +85,50 @@ pub fn run(json_output: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("CLAUX doctor");
-    println!("  projects dir : {}", projects_dir.display());
-    println!("  sessions dir : {}", sessions_dir.display());
+    println!("{}", section("Doctor"));
+    println!("{}", kv("projects dir", projects_dir.display().to_string()));
+    println!("{}", kv("sessions dir", sessions_dir.display().to_string()));
     println!(
-        "  projects dir : {}",
-        if projects_exists { "ok" } else { "missing" }
+        "{}",
+        kv(
+            "projects status",
+            if projects_exists {
+                "ok".green().to_string()
+            } else {
+                "missing".red().to_string()
+            }
+        )
     );
     println!(
-        "  sessions dir : {}",
-        if sessions_exists { "ok" } else { "missing" }
+        "{}",
+        kv(
+            "sessions status",
+            if sessions_exists {
+                "ok".green().to_string()
+            } else {
+                "missing".red().to_string()
+            }
+        )
     );
-    println!("  active ids   : {}", active_ids.len());
+    println!("{}", kv("active ids", active_ids.len().to_string()));
     println!(
-        "  parse health : {} ok / {} failed / {} files",
-        parse_health.parsed_ok, parse_health.parsed_failed, parse_health.discovered_jsonl
+        "{}",
+        kv(
+            "parse health",
+            format!(
+                "{} ok / {} failed / {} files",
+                parse_health.parsed_ok, parse_health.parsed_failed, parse_health.discovered_jsonl
+            )
+        )
     );
 
     let recs = recommendations(projects_exists, sessions_exists, &parse_health);
     if recs.is_empty() {
-        println!("  status       : healthy");
+        println!("{}", kv("status", "healthy".green().to_string()));
     } else {
-        println!("  status       : needs attention");
+        println!("{}", kv("status", "needs attention".yellow().to_string()));
         for rec in recs {
-            println!("  - {}", rec);
+            println!("{}", warning(rec));
         }
     }
 

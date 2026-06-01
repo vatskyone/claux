@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use comfy_table::{Cell, Color, Table};
+use owo_colors::OwoColorize;
 use std::fs;
 
 use crate::models::SkillSource;
+use crate::render::{section, success, warning};
 use crate::skills::load_skills;
 
 #[derive(clap::Subcommand)]
@@ -40,8 +42,9 @@ pub fn run(action: &SkillsAction) -> Result<()> {
 
 fn list() -> Result<()> {
     let skills = load_skills();
+    println!("{}", section("Skills"));
     if skills.is_empty() {
-        println!("No skills found.");
+        println!("{}", warning("No skills found"));
         return Ok(());
     }
 
@@ -107,7 +110,10 @@ fn export(name: &str, out: Option<&str>) -> Result<()> {
             fs::copy(&path, dest.join(&fname))?;
         }
     }
-    eprintln!("Exported '{}' → {}", name, dest.display());
+    eprintln!(
+        "{}",
+        success(format!("Exported '{}' -> {}", name, dest.display()))
+    );
     Ok(())
 }
 
@@ -137,7 +143,10 @@ fn import(path: &str) -> Result<()> {
             fs::copy(&p, dest.join(entry.file_name()))?;
         }
     }
-    eprintln!("Imported '{}' → {}", name, dest.display());
+    eprintln!(
+        "{}",
+        success(format!("Imported '{}' -> {}", name, dest.display()))
+    );
     Ok(())
 }
 
@@ -156,8 +165,14 @@ fn new_skill(name: &str) -> Result<()> {
         name
     );
     fs::write(dest.join("SKILL.md"), template)?;
-    eprintln!("Created: ~/.claude/skills/{}/SKILL.md", name);
-    eprintln!("Edit the file to add your skill's description and instructions.");
+    eprintln!(
+        "{}",
+        success(format!("Created ~/.claude/skills/{}/SKILL.md", name))
+    );
+    eprintln!(
+        "{}",
+        "Edit the file to add your skill description and instructions.".dimmed()
+    );
     Ok(())
 }
 

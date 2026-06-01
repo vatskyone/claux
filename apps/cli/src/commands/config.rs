@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
-
 use crate::config::{active_sessions_dir, load_claux_config, projects_root_dir, save_claux_config};
+use crate::render::{kv, section, success};
+use anyhow::{bail, Result};
 
 #[derive(clap::Subcommand)]
 pub enum ConfigAction {
@@ -45,12 +45,13 @@ pub fn run(action: &ConfigAction) -> Result<()> {
     match action {
         ConfigAction::Get { key } => {
             let cfg = load_claux_config();
+            println!("{}", section("Config"));
             match key.as_str() {
-                "weekly-budget" => println!("{}", fmt_opt_usd(cfg.weekly_budget_usd)),
-                "plan-5h-limit" => println!("{}", fmt_opt_usd(cfg.plan_5h_limit_usd)),
-                "monthly-credit" => println!("{}", fmt_opt_usd(cfg.monthly_credit_usd)),
-                "projects-root" => println!("{}", cfg.projects_root.unwrap_or_else(|| projects_root_dir().display().to_string())),
-                "sessions-root" => println!("{}", cfg.sessions_root.unwrap_or_else(|| active_sessions_dir().display().to_string())),
+                "weekly-budget" => println!("{}", kv("weekly-budget", fmt_opt_usd(cfg.weekly_budget_usd))),
+                "plan-5h-limit" => println!("{}", kv("plan-5h-limit", fmt_opt_usd(cfg.plan_5h_limit_usd))),
+                "monthly-credit" => println!("{}", kv("monthly-credit", fmt_opt_usd(cfg.monthly_credit_usd))),
+                "projects-root" => println!("{}", kv("projects-root", cfg.projects_root.unwrap_or_else(|| projects_root_dir().display().to_string()))),
+                "sessions-root" => println!("{}", kv("sessions-root", cfg.sessions_root.unwrap_or_else(|| active_sessions_dir().display().to_string()))),
                 other => bail!(
                     "unknown key '{}'. Valid keys: weekly-budget, plan-5h-limit, monthly-credit, projects-root, sessions-root",
                     other
@@ -71,7 +72,7 @@ pub fn run(action: &ConfigAction) -> Result<()> {
                 ),
             }
             save_claux_config(&cfg)?;
-            eprintln!("Set {} = {}", key, value);
+            eprintln!("{}", success(format!("Set {} = {}", key, value)));
         }
         ConfigAction::Unset { key } => {
             let mut cfg = load_claux_config();
@@ -87,7 +88,7 @@ pub fn run(action: &ConfigAction) -> Result<()> {
                 ),
             }
             save_claux_config(&cfg)?;
-            eprintln!("Unset {}", key);
+            eprintln!("{}", success(format!("Unset {}", key)));
         }
         ConfigAction::Init {
             weekly_budget,
@@ -122,18 +123,34 @@ pub fn run(action: &ConfigAction) -> Result<()> {
             }
 
             save_claux_config(&cfg)?;
-            println!("Initialized ~/.claude/claux/config.json");
+            println!("{}", section("Config"));
+            println!("{}", success("Initialized ~/.claude/claux/config.json"));
             println!(
-                "  projects-root : {}",
-                cfg.projects_root.as_deref().unwrap_or("(not set)")
+                "{}",
+                kv(
+                    "projects-root",
+                    cfg.projects_root.as_deref().unwrap_or("(not set)")
+                )
             );
             println!(
-                "  sessions-root : {}",
-                cfg.sessions_root.as_deref().unwrap_or("(not set)")
+                "{}",
+                kv(
+                    "sessions-root",
+                    cfg.sessions_root.as_deref().unwrap_or("(not set)")
+                )
             );
-            println!("  weekly-budget : {}", fmt_opt_usd(cfg.weekly_budget_usd));
-            println!("  plan-5h-limit : {}", fmt_opt_usd(cfg.plan_5h_limit_usd));
-            println!("  monthly-credit: {}", fmt_opt_usd(cfg.monthly_credit_usd));
+            println!(
+                "{}",
+                kv("weekly-budget", fmt_opt_usd(cfg.weekly_budget_usd))
+            );
+            println!(
+                "{}",
+                kv("plan-5h-limit", fmt_opt_usd(cfg.plan_5h_limit_usd))
+            );
+            println!(
+                "{}",
+                kv("monthly-credit", fmt_opt_usd(cfg.monthly_credit_usd))
+            );
         }
     }
     Ok(())

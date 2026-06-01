@@ -95,3 +95,29 @@ pub fn model_colored(name: &str) -> String {
         name.blue().to_string()
     }
 }
+
+/// Dim section divider used by non-TUI command outputs.
+pub fn section(title: &str) -> String {
+    format!("─── {} ─────────────────────────────", title)
+        .dimmed()
+        .to_string()
+}
+
+/// Standard key/value row style for command cards.
+pub fn kv(label: &str, value: impl AsRef<str>) -> String {
+    format!(
+        "  {:<16} {}",
+        format!("{}:", label).dimmed(),
+        value.as_ref()
+    )
+}
+
+/// Success badge text for CLI acknowledgements.
+pub fn success(msg: impl AsRef<str>) -> String {
+    format!("✓ {}", msg.as_ref()).green().to_string()
+}
+
+/// Warning badge text for CLI diagnostics and empty states.
+pub fn warning(msg: impl AsRef<str>) -> String {
+    format!("! {}", msg.as_ref()).yellow().to_string()
+}

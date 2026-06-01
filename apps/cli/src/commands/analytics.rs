@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::format;
 use crate::metrics::{load_local_metrics, record_empty_state, reset_local_metrics};
 use crate::models::ClaudeSession;
-use crate::render::{make_table, model_colored, spend_sparkline};
+use crate::render::{kv, make_table, model_colored, section, spend_sparkline, success, warning};
 use crate::spend::{compute_daily_spend, compute_model_breakdown, compute_project_breakdown};
 
 pub fn run(sessions: &[ClaudeSession], days: usize, json: bool) -> Result<()> {
@@ -27,7 +27,7 @@ pub fn run(sessions: &[ClaudeSession], days: usize, json: bool) -> Result<()> {
     let costs: Vec<f64> = visible.iter().map(|d| d.cost).collect();
     let total: f64 = costs.iter().sum();
 
-    println!("{}", "─── Daily Spend ──────────────────────────".dimmed());
+    println!("{}", section("Analytics · Daily Spend"));
     println!(
         "  {}  (last {} days, total {})",
         spend_sparkline(&costs, 30).blue().to_string(),
@@ -53,10 +53,13 @@ pub fn run(sessions: &[ClaudeSession], days: usize, json: bool) -> Result<()> {
     println!("{dtable}");
     println!();
 
-    println!("{}", "─── By Project ───────────────────────────".dimmed());
+    println!("{}", section("Analytics · By Project"));
     if projects.is_empty() {
         record_empty_state("no_data_yet");
-        println!("  No data yet (no parsed sessions in current tracking window).",);
+        println!(
+            "{}",
+            warning("No data yet (no parsed sessions in current tracking window)")
+        );
     } else {
         let mut ptable = make_table(&["Project", "Sessions", "Cost"]);
         for p in projects.iter().take(10) {
@@ -70,10 +73,13 @@ pub fn run(sessions: &[ClaudeSession], days: usize, json: bool) -> Result<()> {
     }
     println!();
 
-    println!("{}", "─── By Model ─────────────────────────────".dimmed());
+    println!("{}", section("Analytics · By Model"));
     if models.is_empty() {
         record_empty_state("source_unavailable");
-        println!("  Source unavailable or no model usage parsed yet.");
+        println!(
+            "{}",
+            warning("Source unavailable or no model usage parsed yet")
+        );
     } else {
         let mut mtable = make_table(&["Model", "Sessions", "Cost"]);
         for m in &models {
@@ -95,12 +101,13 @@ pub fn run_local_metrics(reset: bool, as_json: bool) -> Result<()> {
     if as_json {
         println!("{}", serde_json::to_string_pretty(&metrics)?);
     } else {
-        println!("Local CLI metrics (stored on-device)");
+        println!("{}", section("Analytics · Local Metrics"));
+        println!("{}", "Local-only metrics (stored on-device)".dimmed());
         println!();
 
-        println!("Command usage:");
+        println!("{}", "Command usage".bold());
         if metrics.command_counts.is_empty() {
-            println!("  (no command data yet)");
+            println!("{}", warning("No command data yet"));
         } else {
             let mut items: Vec<_> = metrics.command_counts.iter().collect();
             items.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -110,9 +117,9 @@ pub fn run_local_metrics(reset: bool, as_json: bool) -> Result<()> {
         }
 
         println!();
-        println!("Failure classes:");
+        println!("{}", "Failure classes".bold());
         if metrics.failure_counts.is_empty() {
-            println!("  (none)");
+            println!("{}", "  none".dimmed());
         } else {
             let mut items: Vec<_> = metrics.failure_counts.iter().collect();
             items.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -122,9 +129,9 @@ pub fn run_local_metrics(reset: bool, as_json: bool) -> Result<()> {
         }
 
         println!();
-        println!("Empty-state reasons:");
+        println!("{}", "Empty-state reasons".bold());
         if metrics.empty_state_counts.is_empty() {
-            println!("  (none)");
+            println!("{}", "  none".dimmed());
         } else {
             let mut items: Vec<_> = metrics.empty_state_counts.iter().collect();
             items.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -134,9 +141,9 @@ pub fn run_local_metrics(reset: bool, as_json: bool) -> Result<()> {
         }
 
         println!();
-        println!("Refresh latency buckets:");
+        println!("{}", "Refresh latency buckets".bold());
         if metrics.refresh_latency_buckets.is_empty() {
-            println!("  (none)");
+            println!("{}", "  none".dimmed());
         } else {
             let mut items: Vec<_> = metrics.refresh_latency_buckets.iter().collect();
             items.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -147,13 +154,13 @@ pub fn run_local_metrics(reset: bool, as_json: bool) -> Result<()> {
 
         if let Some(ts) = &metrics.updated_at {
             println!();
-            println!("Last updated: {}", ts);
+            println!("{}", kv("Last updated", ts));
         }
     }
 
     if reset {
         reset_local_metrics()?;
-        eprintln!("Local metrics reset.");
+        eprintln!("{}", success("Local metrics reset"));
     }
 
     Ok(())
