@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use crate::config::{active_sessions_dir, projects_root_dir};
 use crate::models::{AgentRun, ClaudeSession};
 use crate::parser::{parse_agents, parse_session};
 
@@ -17,7 +18,9 @@ pub struct SessionCache {
 }
 
 impl SessionCache {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn get_or_parse(
         &mut self,
@@ -31,7 +34,11 @@ impl SessionCache {
                 let mut s = cached_session.clone();
                 let id_active = active_ids.contains(&s.id);
                 s.is_active = id_active || is_recent;
-                s.end_time  = if s.is_active { None } else { cached_session.end_time };
+                s.end_time = if s.is_active {
+                    None
+                } else {
+                    cached_session.end_time
+                };
                 return Some(s);
             }
         }
@@ -56,16 +63,21 @@ impl SessionCache {
 
 pub fn load_active_ids() -> HashSet<String> {
     let mut ids = HashSet::new();
-    let dir = match dirs::home_dir() {
-        Some(h) => h.join(".claude").join("sessions"),
-        None    => return ids,
+    let dir = active_sessions_dir();
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return ids;
     };
-    let Ok(entries) = fs::read_dir(&dir) else { return ids };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
-        let Ok(text) = fs::read_to_string(&path) else { continue };
-        let Ok(val): Result<serde_json::Value, _> = serde_json::from_str(&text) else { continue };
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(val): Result<serde_json::Value, _> = serde_json::from_str(&text) else {
+            continue;
+        };
         if let Some(id) = val.get("sessionId").and_then(|v| v.as_str()) {
             ids.insert(id.to_string());
         }
@@ -76,10 +88,7 @@ pub fn load_active_ids() -> HashSet<String> {
 // ── JSONL file discovery ──────────────────────────────────────────────────────
 
 pub fn find_jsonl_files() -> Vec<PathBuf> {
-    let root = match dirs::home_dir() {
-        Some(h) => h.join(".claude").join("projects"),
-        None    => return vec![],
-    };
+    let root = projects_root_dir();
     let mut files = Vec::new();
     collect_jsonl(&root, &mut files);
     files
@@ -89,12 +98,14 @@ pub fn find_jsonl_files() -> Vec<PathBuf> {
 /// (`subagents/`, `tool-results/`, `memory/`) so sub-agent files are not treated
 /// as sessions.
 fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             let name = entry.file_name();
-            let n    = name.to_string_lossy();
+            let n = name.to_string_lossy();
             // Skip Claude's companion data directories
             if n == "subagents" || n == "tool-results" || n == "memory" {
                 continue;
@@ -110,17 +121,20 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
 
 pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
     let active_ids = load_active_ids();
-    let files      = find_jsonl_files();
-    let now        = SystemTime::now();
+    let files = find_jsonl_files();
+    let now = SystemTime::now();
 
-    let mut seen     = HashSet::new();
+    let mut seen = HashSet::new();
     let mut sessions = Vec::new();
 
     for path in &files {
-        let Ok(meta)  = fs::metadata(path) else { continue };
-        let Ok(mtime) = meta.modified()    else { continue };
+        let Ok(meta) = fs::metadata(path) else {
+            continue;
+        };
+        let Ok(mtime) = meta.modified() else { continue };
 
-        let is_recent = now.duration_since(mtime)
+        let is_recent = now
+            .duration_since(mtime)
             .map(|d| d < ACTIVE_MTIME_THRESHOLD)
             .unwrap_or(false);
 
@@ -133,7 +147,8 @@ pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
     cache.evict(&seen);
 
     sessions.sort_by(|a, b| {
-        b.is_active.cmp(&a.is_active)
+        b.is_active
+            .cmp(&a.is_active)
             .then(b.start_time.cmp(&a.start_time))
     });
 
@@ -152,7 +167,9 @@ pub fn load_sessions(cache: &mut SessionCache) -> Vec<ClaudeSession> {
 
 /// Return all agent runs recorded in the given session's JSONL file.
 pub fn load_agents_for_session(session: &ClaudeSession) -> Vec<AgentRun> {
-    if session.jsonl_path.as_os_str().is_empty() { return vec![]; }
+    if session.jsonl_path.as_os_str().is_empty() {
+        return vec![];
+    }
     parse_agents(&session.jsonl_path)
 }
 

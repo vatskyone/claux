@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TokenUsage {
-    pub input_tokens:          u64,
-    pub output_tokens:         u64,
-    pub cache_read_tokens:     u64,
-    pub cache_write_tokens:    u64,
-    pub thinking_tokens:       u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub thinking_tokens: u64,
     /// Tokens from the **most recent** assistant turn only (input + cache_read + cache_write).
     /// Used for context-window fill percentage.
     pub context_window_tokens: u64,
@@ -26,7 +26,11 @@ impl TokenUsage {
     /// Cache-hit rate: cache_read / (input + cache_read + cache_write).
     pub fn cache_hit_rate(&self) -> f64 {
         let total = self.input_tokens + self.cache_read_tokens + self.cache_write_tokens;
-        if total == 0 { 0.0 } else { self.cache_read_tokens as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            self.cache_read_tokens as f64 / total as f64
+        }
     }
 }
 
@@ -34,26 +38,26 @@ impl TokenUsage {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ClaudeSession {
-    pub id:             String,
-    pub project_path:   String,
-    pub start_time:     DateTime<Local>,
-    pub end_time:       Option<DateTime<Local>>,
-    pub total_cost:     f64,
-    pub token_usage:    TokenUsage,
-    pub model:          String,
-    pub is_active:      bool,
-    pub title:          Option<String>,
-    pub entrypoint:     Option<String>,
+    pub id: String,
+    pub project_path: String,
+    pub start_time: DateTime<Local>,
+    pub end_time: Option<DateTime<Local>>,
+    pub total_cost: f64,
+    pub token_usage: TokenUsage,
+    pub model: String,
+    pub is_active: bool,
+    pub title: Option<String>,
+    pub entrypoint: Option<String>,
     pub claudemd_score: Option<u8>,
     /// Per-calendar-day cost attribution (local midnight as key).
     #[serde(skip)]
-    pub daily_costs:    HashMap<NaiveDate, f64>,
+    pub daily_costs: HashMap<NaiveDate, f64>,
     /// Absolute path to the source JSONL file (used for agent parsing).
     #[serde(skip)]
-    pub jsonl_path:     PathBuf,
+    pub jsonl_path: PathBuf,
     /// User-assigned tag label (loaded from ~/.claude/claux/tags.json).
     #[serde(skip)]
-    pub tag:            Option<String>,
+    pub tag: Option<String>,
 }
 
 impl ClaudeSession {
@@ -66,7 +70,9 @@ impl ClaudeSession {
     /// Burn rate in dollars per hour. Zero if session is < 60 s.
     pub fn burn_rate_per_hour(&self) -> f64 {
         let secs = self.duration_secs();
-        if secs < 60 { return 0.0; }
+        if secs < 60 {
+            return 0.0;
+        }
         self.total_cost / (secs as f64 / 3600.0)
     }
 
@@ -98,29 +104,29 @@ impl ClaudeSession {
 #[derive(Debug, Clone)]
 pub struct AgentRun {
     /// The `tool_use.id` from the parent session's assistant turn.
-    pub tool_use_id:    String,
+    pub tool_use_id: String,
     /// The short agentId from `sourceToolAssistantUUID` (used to find sub-agent JSONL).
-    pub agent_id:       Option<String>,
+    pub agent_id: Option<String>,
     /// e.g. "Explore", "Plan", "general-purpose", "claude-code-guide"
-    pub subagent_type:  String,
+    pub subagent_type: String,
     /// One-line task summary from `input.description`.
-    pub description:    String,
+    pub description: String,
     /// Full prompt text from `input.prompt`.
-    pub prompt:         String,
+    pub prompt: String,
     /// Timestamp of the assistant turn that spawned the agent.
-    pub start_time:     DateTime<Local>,
+    pub start_time: DateTime<Local>,
     /// Timestamp of the user turn that delivered the tool_result.
-    pub end_time:       Option<DateTime<Local>>,
+    pub end_time: Option<DateTime<Local>>,
     /// Whether a matching tool_result was received.
-    pub completed:      bool,
+    pub completed: bool,
     /// First 250 chars of the tool_result content.
     pub output_preview: String,
     /// Accumulated from the sub-agent's JSONL file; zeroed if file not found.
-    pub token_usage:    TokenUsage,
-    pub total_cost:     f64,
-    pub model:          Option<String>,
+    pub token_usage: TokenUsage,
+    pub total_cost: f64,
+    pub model: Option<String>,
     /// Quality score 1–5 (computed from completion status and output richness).
-    pub quality_score:  u8,
+    pub quality_score: u8,
 }
 
 /// Compute a 1–5 quality score for an agent run.
@@ -131,14 +137,24 @@ pub struct AgentRun {
 /// - 4 = good output (200–499 chars)
 /// - 5 = rich output (≥ 500 chars)
 pub fn compute_quality_score(completed: bool, output: &str) -> u8 {
-    if !completed { return 1; }
+    if !completed {
+        return 1;
+    }
     let low = output.to_lowercase();
     let has_error = low.contains("error:") || low.contains("failed") || low.contains("unable to");
-    if has_error { return 2; }
+    if has_error {
+        return 2;
+    }
     let len = output.len();
-    if len < 50        { return 2; }
-    if len < 200       { return 3; }
-    if len < 500       { return 4; }
+    if len < 50 {
+        return 2;
+    }
+    if len < 200 {
+        return 3;
+    }
+    if len < 500 {
+        return 4;
+    }
     5
 }
 
@@ -153,12 +169,12 @@ pub fn compute_quality_score(completed: bool, output: &str) -> u8 {
 /// - Lv.5 : 60+
 pub fn agent_level(total_tasks: usize) -> (u8, f64) {
     match total_tasks {
-        0       => (0, 0.0),
-        1..=4   => (1, (total_tasks - 1) as f64 / 4.0),
-        5..=14  => (2, (total_tasks - 5) as f64 / 10.0),
+        0 => (0, 0.0),
+        1..=4 => (1, (total_tasks - 1) as f64 / 4.0),
+        5..=14 => (2, (total_tasks - 5) as f64 / 10.0),
         15..=29 => (3, (total_tasks - 15) as f64 / 15.0),
         30..=59 => (4, (total_tasks - 30) as f64 / 30.0),
-        _       => (5, 1.0),
+        _ => (5, 1.0),
     }
 }
 
@@ -166,14 +182,14 @@ pub fn agent_level(total_tasks: usize) -> (u8, f64) {
 
 #[derive(Debug, Clone, Default)]
 pub struct AccountInfo {
-    pub display_name:    String,
-    pub email:           String,
-    pub plan_type:       String,
-    pub org_name:        String,
-    pub org_role:        String,
-    pub billing_type:    String,
+    pub display_name: String,
+    pub email: String,
+    pub plan_type: String,
+    pub org_name: String,
+    pub org_role: String,
+    pub billing_type: String,
     pub account_created: String,
-    pub sub_created:     Option<String>,
+    pub sub_created: Option<String>,
     pub rate_limit_tier: String,
     pub has_extra_usage: bool,
 }
@@ -182,41 +198,47 @@ pub struct AccountInfo {
 
 #[derive(Debug, Clone)]
 pub struct ClaudemdAnalysis {
-    pub score:            u8,
-    pub word_count:       usize,
-    pub heading_count:    usize,
-    pub has_build:        bool,
-    pub has_tests:        bool,
-    pub has_run:          bool,
-    pub has_structure:    bool,
-    pub has_conventions:  bool,
-    pub has_workflow:     bool,
-    pub has_commands:     bool,
-    pub has_important:    bool,
-    pub suggestions:      Vec<&'static str>,
+    pub score: u8,
+    pub word_count: usize,
+    pub heading_count: usize,
+    pub has_build: bool,
+    pub has_tests: bool,
+    pub has_run: bool,
+    pub has_structure: bool,
+    pub has_conventions: bool,
+    pub has_workflow: bool,
+    pub has_commands: bool,
+    pub has_important: bool,
+    pub suggestions: Vec<&'static str>,
 }
 
 // ── Skill info ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SkillSource { Builtin, Custom }
+pub enum SkillSource {
+    Builtin,
+    Custom,
+}
 
 #[derive(Debug, Clone)]
 pub struct SkillInfo {
-    pub name:         String,
-    pub source:       SkillSource,
-    pub description:  Option<String>,
-    pub usage_count:  usize,
+    pub name: String,
+    pub source: SkillSource,
+    pub description: Option<String>,
+    pub usage_count: usize,
     pub last_used_ms: Option<u64>,
-    pub rating:       u8,
-    pub content:      Option<String>,
+    pub rating: u8,
+    pub content: Option<String>,
 }
 
 // ── User-configurable budget limits ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClauxConfig {
-    pub weekly_budget_usd:  Option<f64>,
+    pub projects_root: Option<String>,
+    pub sessions_root: Option<String>,
+    pub weekly_budget_usd: Option<f64>,
+    pub plan_5h_limit_usd: Option<f64>,
     pub monthly_credit_usd: Option<f64>,
 }
 
@@ -225,34 +247,34 @@ pub struct ClauxConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
     /// 8-char random hex ID.
-    pub id:               String,
+    pub id: String,
     /// User-provided label.
-    pub name:             String,
+    pub name: String,
     /// RFC3339 creation timestamp.
-    pub created_at:       String,
-    pub project_path:     String,
-    pub session_id:       Option<String>,
-    pub git_branch:       Option<String>,
-    pub git_commit:       Option<String>,
+    pub created_at: String,
+    pub project_path: String,
+    pub session_id: Option<String>,
+    pub git_branch: Option<String>,
+    pub git_commit: Option<String>,
     /// Lifetime project cost (sum of all sessions) at save time.
-    pub cost_total_usd:   f64,
+    pub cost_total_usd: f64,
     /// Active session cost at save time.
     pub session_cost_usd: f64,
-    pub total_sessions:   usize,
+    pub total_sessions: usize,
     /// Files changed since the prior checkpoint's commit (via git diff).
-    pub files_changed:    Vec<String>,
-    pub claudemd_score:   Option<u8>,
-    pub summary:          String,
+    pub files_changed: Vec<String>,
+    pub claudemd_score: Option<u8>,
+    pub summary: String,
 }
 
 // ── Aggregate / summary structs ───────────────────────────────────────────────
 
 #[derive(Debug, Default, Serialize)]
 pub struct SpendSummary {
-    pub today:      f64,
-    pub yesterday:  f64,
-    pub this_week:  f64,
-    pub prev_week:  f64,
+    pub today: f64,
+    pub yesterday: f64,
+    pub this_week: f64,
+    pub prev_week: f64,
     pub this_month: f64,
     pub prev_month: f64,
 }
@@ -265,32 +287,32 @@ pub struct DailySpend {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectSpend {
-    pub path:          String,
-    pub display_path:  String,
-    pub total_cost:    f64,
+    pub path: String,
+    pub display_path: String,
+    pub total_cost: f64,
     pub session_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelSpend {
-    pub model:         String,
-    pub display_name:  String,
-    pub total_cost:    f64,
+    pub model: String,
+    pub display_name: String,
+    pub total_cost: f64,
     pub session_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MonthlyForecast {
     /// Average daily spend over the last 7 days.
-    pub avg_per_day_7d:   f64,
+    pub avg_per_day_7d: f64,
     /// Cumulative spend since the 1st of the current calendar month.
-    pub month_to_date:    f64,
+    pub month_to_date: f64,
     /// Calendar days elapsed this month (including today).
-    pub days_elapsed:     u32,
+    pub days_elapsed: u32,
     /// Calendar days remaining this month (excluding today).
-    pub days_remaining:   u32,
+    pub days_remaining: u32,
     /// Projected total for the current month at the 7-day pace.
-    pub projected_eom:    f64,
+    pub projected_eom: f64,
     /// Projected spend over 365 days at the 7-day pace.
     pub projected_annual: f64,
 }

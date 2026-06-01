@@ -65,9 +65,8 @@ pub fn model_short_name(model: &str) -> String {
     };
 
     // Version numbers are 1–2 digit integers; dates like 20241022 are > 99.
-    let is_version = |s: &str| -> Option<u32> {
-        s.parse::<u32>().ok().filter(|&n| n > 0 && n <= 99)
-    };
+    let is_version =
+        |s: &str| -> Option<u32> { s.parse::<u32>().ok().filter(|&n| n > 0 && n <= 99) };
 
     // New format: version comes AFTER family (claude-sonnet-4-6)
     let after: Vec<u32> = parts[family_idx + 1..]

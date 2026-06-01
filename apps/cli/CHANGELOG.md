@@ -2,6 +2,58 @@
 
 ---
 
+## [0.7.1] — 2026-06-01
+
+### Reliability hardening
+
+- Replaced panic-prone sort comparisons (`partial_cmp(...).unwrap()`) with total ordering in spend and TUI analytics paths.
+- Removed fragile `unwrap()` usage in clipboard piping and JSON export/session serialization paths.
+- Added parser guardrails:
+  - reject session logs with no valid JSON lines
+  - reject session logs with no assistant usage entries
+- Optimized CLAUDE.md discovery BFS queue internals to avoid `Vec::remove(0)` churn.
+
+### New diagnostics and setup flows
+
+- **New `claux doctor` command** (with `--json`) for read-only diagnostics:
+  - validates session source directories
+  - reports active ID count
+  - reports parse health (`ok/failed/total`)
+  - emits actionable remediation hints
+- **New `claux config init`** guided initializer.
+
+### Config and usage-limit tracking
+
+- Added config keys:
+  - `plan-5h-limit` (USD)
+  - `projects-root`
+  - `sessions-root`
+- TUI Usage panel now includes:
+  - **Last 5h usage bar** with reset timestamp
+  - weekly budget bar with reset timestamp
+  - explicit blank-state UX reasons (`limit unset`, `no data yet`, `source unavailable`, `no active session`)
+
+### Local-only growth instrumentation
+
+- New on-device metrics store at `~/.claude/claux/local_metrics.json`.
+- Tracks:
+  - command usage counts
+  - failure classes
+  - empty-state frequency
+  - TUI refresh latency buckets
+- New `claux analytics local` view (`--json`, `--reset`) for inspection/reset.
+
+### Tests
+
+- Added unit tests for:
+  - safe sort behavior with NaN totals
+  - 5-hour usage window and reset math
+  - parser robustness against malformed/partial logs
+
+### Docs
+
+- README updated with new command/config surface and version badge.
+
 ## [0.7.0] — 2026-05-28
 
 ### History tab — session checkpoints

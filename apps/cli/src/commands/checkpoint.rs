@@ -2,8 +2,8 @@ use anyhow::Result;
 use comfy_table::{Cell, Color, Table};
 
 use crate::checkpoints::{
-    delete_checkpoint, find_checkpoint, generate_context_md, infer_project_path,
-    load_checkpoints, save_checkpoint, write_context_md,
+    delete_checkpoint, find_checkpoint, generate_context_md, infer_project_path, load_checkpoints,
+    save_checkpoint, write_context_md,
 };
 use crate::models::ClaudeSession;
 use crate::monitor::{load_sessions, SessionCache};
@@ -33,13 +33,13 @@ pub enum CheckpointAction {
 }
 
 pub fn run(action: &CheckpointAction) -> Result<()> {
-    let mut cache    = SessionCache::new();
-    let sessions     = load_sessions(&mut cache);
+    let mut cache = SessionCache::new();
+    let sessions = load_sessions(&mut cache);
     let project_path = infer_project_path(&sessions);
 
     match action {
         CheckpointAction::Save { name } => cmd_save(&sessions, &project_path, name.as_deref()),
-        CheckpointAction::List          => cmd_list(&project_path),
+        CheckpointAction::List => cmd_list(&project_path),
         CheckpointAction::Load { id, write } => cmd_load(&project_path, id, *write),
         CheckpointAction::Delete { id } => cmd_delete(&project_path, id),
     }
@@ -48,7 +48,7 @@ pub fn run(action: &CheckpointAction) -> Result<()> {
 fn cmd_save(sessions: &[ClaudeSession], project_path: &str, name: Option<&str>) -> Result<()> {
     let label = match name {
         Some(n) => n.to_string(),
-        None    => {
+        None => {
             eprint!("Checkpoint name: ");
             let mut buf = String::new();
             std::io::stdin().read_line(&mut buf)?;
@@ -62,8 +62,20 @@ fn cmd_save(sessions: &[ClaudeSession], project_path: &str, name: Option<&str>) 
 
     let cp = save_checkpoint(project_path, sessions, &label)?;
     println!("Saved checkpoint  {}  \"{}\"", cp.id, cp.name);
-    if let Some(b) = &cp.git_branch { println!("  Branch:  {}  {}", b, cp.git_commit.as_deref().map(|c| &c[..c.len().min(8)]).unwrap_or("")); }
-    println!("  Cost to date:  ${:.2}  ({} sessions)", cp.cost_total_usd, cp.total_sessions);
+    if let Some(b) = &cp.git_branch {
+        println!(
+            "  Branch:  {}  {}",
+            b,
+            cp.git_commit
+                .as_deref()
+                .map(|c| &c[..c.len().min(8)])
+                .unwrap_or("")
+        );
+    }
+    println!(
+        "  Cost to date:  ${:.2}  ({} sessions)",
+        cp.cost_total_usd, cp.total_sessions
+    );
     if !cp.files_changed.is_empty() {
         println!("  Changed files:  {}", cp.files_changed.len());
     }
@@ -88,10 +100,15 @@ fn cmd_list(project_path: &str) -> Result<()> {
     ]);
 
     for cp in &checkpoints {
-        let date = cp.created_at.split('T').next().unwrap_or(&cp.created_at).to_string();
+        let date = cp
+            .created_at
+            .split('T')
+            .next()
+            .unwrap_or(&cp.created_at)
+            .to_string();
         let branch = cp.git_branch.clone().unwrap_or_else(|| "—".to_string());
-        let cost   = format!("${:.2}", cp.cost_total_usd);
-        let files  = cp.files_changed.len().to_string();
+        let cost = format!("${:.2}", cp.cost_total_usd);
+        let files = cp.files_changed.len().to_string();
         table.add_row(vec![
             Cell::new(&cp.id),
             Cell::new(&cp.name),

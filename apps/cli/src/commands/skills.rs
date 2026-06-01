@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use comfy_table::{Cell, Color, Table};
 use std::fs;
 
-use crate::skills::load_skills;
 use crate::models::SkillSource;
+use crate::skills::load_skills;
 
 #[derive(clap::Subcommand)]
 pub enum SkillsAction {
@@ -31,7 +31,7 @@ pub enum SkillsAction {
 
 pub fn run(action: &SkillsAction) -> Result<()> {
     match action {
-        SkillsAction::List    => list(),
+        SkillsAction::List => list(),
         SkillsAction::Export { name, out } => export(name, out.as_deref()),
         SkillsAction::Import { path } => import(path),
         SkillsAction::New { name } => new_skill(name),
@@ -56,12 +56,21 @@ fn list() -> Result<()> {
     ]);
 
     for skill in &skills {
-        let dot     = if skill.source == SkillSource::Custom { "●" } else { "○" };
-        let kind    = if skill.source == SkillSource::Custom { "custom" } else { "builtin" };
-        let last    = skill.last_used_ms
+        let dot = if skill.source == SkillSource::Custom {
+            "●"
+        } else {
+            "○"
+        };
+        let kind = if skill.source == SkillSource::Custom {
+            "custom"
+        } else {
+            "builtin"
+        };
+        let last = skill
+            .last_used_ms
             .map(|ms| relative_ms(ms))
             .unwrap_or_else(|| "never".to_string());
-        let rating  = stars(skill.rating);
+        let rating = stars(skill.rating);
         table.add_row(vec![
             Cell::new(dot),
             Cell::new(&skill.name),
@@ -85,7 +94,9 @@ fn export(name: &str, out: Option<&str>) -> Result<()> {
         anyhow::bail!("custom skill '{}' not found in ~/.claude/skills/", name);
     }
 
-    let dest_base = out.map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("."));
+    let dest_base = out
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
     let dest = dest_base.join(name);
     fs::create_dir_all(&dest)?;
 
@@ -103,15 +114,21 @@ fn export(name: &str, out: Option<&str>) -> Result<()> {
 fn import(path: &str) -> Result<()> {
     let src = std::path::Path::new(path);
     anyhow::ensure!(src.is_dir(), "path '{}' is not a directory", path);
-    anyhow::ensure!(src.join("SKILL.md").exists(), "directory must contain a SKILL.md file");
+    anyhow::ensure!(
+        src.join("SKILL.md").exists(),
+        "directory must contain a SKILL.md file"
+    );
 
-    let name = src.file_name()
+    let name = src
+        .file_name()
         .and_then(|n| n.to_str())
         .context("invalid directory name")?;
 
     let dest = dirs::home_dir()
         .context("cannot find home directory")?
-        .join(".claude").join("skills").join(name);
+        .join(".claude")
+        .join("skills")
+        .join(name);
 
     fs::create_dir_all(&dest)?;
     for entry in fs::read_dir(src)?.flatten() {
@@ -127,7 +144,9 @@ fn import(path: &str) -> Result<()> {
 fn new_skill(name: &str) -> Result<()> {
     let dest = dirs::home_dir()
         .context("cannot find home directory")?
-        .join(".claude").join("skills").join(name);
+        .join(".claude")
+        .join("skills")
+        .join(name);
 
     anyhow::ensure!(!dest.exists(), "skill '{}' already exists", name);
 
@@ -148,9 +167,13 @@ fn relative_ms(ms: u64) -> String {
         .unwrap_or_default()
         .as_millis() as u64;
     let secs = (now_ms.saturating_sub(ms)) / 1_000;
-    if secs < 3_600       { format!("{}m ago", secs / 60) }
-    else if secs < 86_400 { format!("{}h ago", secs / 3_600) }
-    else                  { format!("{}d ago", secs / 86_400) }
+    if secs < 3_600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h ago", secs / 3_600)
+    } else {
+        format!("{}d ago", secs / 86_400)
+    }
 }
 
 fn stars(rating: u8) -> String {

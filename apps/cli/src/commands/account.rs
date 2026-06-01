@@ -19,13 +19,13 @@ pub fn run() -> Result<()> {
 
     let plan_label = plan_display(&info.plan_type);
     let rows: &[(&str, &str)] = &[
-        ("Name",         &info.display_name),
-        ("Email",        &info.email),
-        ("Plan",         &plan_label),
+        ("Name", &info.display_name),
+        ("Email", &info.email),
+        ("Plan", &plan_label),
         ("Organization", &info.org_name),
-        ("Role",         &info.org_role),
-        ("Billing",      &info.billing_type),
-        ("Rate tier",    &info.rate_limit_tier),
+        ("Role", &info.org_role),
+        ("Billing", &info.billing_type),
+        ("Rate tier", &info.rate_limit_tier),
     ];
     for (label, value) in rows {
         println!("  {:<16} {}", format!("{}:", label).dimmed(), value);
@@ -42,7 +42,11 @@ pub fn run() -> Result<()> {
     println!(
         "  {:<16} {}",
         "Extra usage:".dimmed(),
-        if info.has_extra_usage { "enabled".green().to_string() } else { "disabled".dimmed().to_string() }
+        if info.has_extra_usage {
+            "enabled".green().to_string()
+        } else {
+            "disabled".dimmed().to_string()
+        }
     );
 
     // ── Skill usage table ──────────────────────────────────────────────────────
@@ -60,10 +64,8 @@ pub fn run() -> Result<()> {
             Cell::new("Rating").fg(Color::Grey),
         ]);
 
-        let mut rows: Vec<(String, usize, Option<u64>)> = usage
-            .into_iter()
-            .map(|(n, (c, l))| (n, c, l))
-            .collect();
+        let mut rows: Vec<(String, usize, Option<u64>)> =
+            usage.into_iter().map(|(n, (c, l))| (n, c, l)).collect();
         rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
         for (name, count, last_ms) in &rows {
@@ -86,12 +88,12 @@ pub fn run() -> Result<()> {
 
 fn plan_display(plan_type: &str) -> String {
     match plan_type {
-        "claude_pro"     => "Claude Pro".to_string(),
-        "claude_max"     => "Claude Max".to_string(),
-        "claude_team"    => "Claude Team".to_string(),
-        "claude_free"    => "Claude Free".to_string(),
-        "free"           => "Free".to_string(),
-        other            => other.to_string(),
+        "claude_pro" => "Claude Pro".to_string(),
+        "claude_max" => "Claude Max".to_string(),
+        "claude_team" => "Claude Team".to_string(),
+        "claude_free" => "Claude Free".to_string(),
+        "free" => "Free".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -107,9 +109,13 @@ fn relative_ms(ms: u64) -> String {
         .unwrap_or_default()
         .as_millis() as u64;
     let secs = (now_ms.saturating_sub(ms)) / 1_000;
-    if secs < 3_600      { format!("{}m ago", secs / 60) }
-    else if secs < 86_400 { format!("{}h ago", secs / 3_600) }
-    else                  { format!("{}d ago", secs / 86_400) }
+    if secs < 3_600 {
+        format!("{}m ago", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h ago", secs / 3_600)
+    } else {
+        format!("{}d ago", secs / 86_400)
+    }
 }
 
 fn stars(rating: u8) -> String {

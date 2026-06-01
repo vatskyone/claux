@@ -25,7 +25,9 @@ fn local_index_path(project_path: &str) -> Option<PathBuf> {
 }
 
 fn per_project_path(project_path: &str) -> PathBuf {
-    PathBuf::from(project_path).join(".claux").join("checkpoints.json")
+    PathBuf::from(project_path)
+        .join(".claux")
+        .join("checkpoints.json")
 }
 
 // ── Load / save ───────────────────────────────────────────────────────────────
@@ -33,10 +35,10 @@ fn per_project_path(project_path: &str) -> PathBuf {
 pub fn load_checkpoints(project_path: &str) -> Vec<Checkpoint> {
     let path = match local_index_path(project_path) {
         Some(p) => p,
-        None    => return vec![],
+        None => return vec![],
     };
     let data = match std::fs::read_to_string(&path) {
-        Ok(d)  => d,
+        Ok(d) => d,
         Err(_) => return vec![],
     };
     let mut list: Vec<Checkpoint> = serde_json::from_str(&data).unwrap_or_default();
@@ -66,8 +68,8 @@ fn write_checkpoints(project_path: &str, checkpoints: &[Checkpoint]) -> Result<(
 
 pub fn save_checkpoint(
     project_path: &str,
-    sessions:     &[ClaudeSession],
-    name:         &str,
+    sessions: &[ClaudeSession],
+    name: &str,
 ) -> Result<Checkpoint> {
     // Cost and session stats for this project
     let project_sessions: Vec<&ClaudeSession> = sessions
@@ -78,9 +80,9 @@ pub fn save_checkpoint(
     let total_sessions = project_sessions.len();
 
     let active = project_sessions.iter().find(|s| s.is_active);
-    let session_id       = active.map(|s| s.id.clone());
+    let session_id = active.map(|s| s.id.clone());
     let session_cost_usd = active.map(|s| s.total_cost).unwrap_or(0.0);
-    let claudemd_score   = active
+    let claudemd_score = active
         .and_then(|s| s.claudemd_score)
         .or_else(|| project_sessions.last().and_then(|s| s.claudemd_score));
 
@@ -90,7 +92,8 @@ pub fn save_checkpoint(
 
     // Files changed since the last checkpoint
     let existing = load_checkpoints(project_path);
-    let prior_commit = existing.iter()
+    let prior_commit = existing
+        .iter()
         .find(|c| c.git_commit.is_some())
         .and_then(|c| c.git_commit.clone());
     let files_changed = prior_commit
@@ -100,10 +103,10 @@ pub fn save_checkpoint(
 
     let id = random_hex8();
     let cp = Checkpoint {
-        id:               id.clone(),
-        name:             name.to_string(),
-        created_at:       Local::now().to_rfc3339(),
-        project_path:     project_path.to_string(),
+        id: id.clone(),
+        name: name.to_string(),
+        created_at: Local::now().to_rfc3339(),
+        project_path: project_path.to_string(),
         session_id,
         git_branch,
         git_commit,
@@ -112,7 +115,7 @@ pub fn save_checkpoint(
         total_sessions,
         files_changed,
         claudemd_score,
-        summary:          String::new(),
+        summary: String::new(),
     };
 
     let mut all = load_checkpoints(project_path);
@@ -132,14 +135,18 @@ pub fn delete_checkpoint(project_path: &str, id_prefix: &str) -> Result<()> {
     write_checkpoints(project_path, &all)
 }
 
-pub fn find_checkpoint<'a>(checkpoints: &'a [Checkpoint], id_prefix: &str) -> Option<&'a Checkpoint> {
+pub fn find_checkpoint<'a>(
+    checkpoints: &'a [Checkpoint],
+    id_prefix: &str,
+) -> Option<&'a Checkpoint> {
     checkpoints.iter().find(|c| c.id.starts_with(id_prefix))
 }
 
 // ── Context markdown generation ───────────────────────────────────────────────
 
 pub fn generate_context_md(cp: &Checkpoint) -> String {
-    let date = cp.created_at
+    let date = cp
+        .created_at
         .split('T')
         .next()
         .unwrap_or(&cp.created_at)
@@ -147,19 +154,22 @@ pub fn generate_context_md(cp: &Checkpoint) -> String {
 
     let branch_line = match (&cp.git_branch, &cp.git_commit) {
         (Some(b), Some(c)) => format!("**Branch:** {}  ·  **Commit:** {}", b, &c[..c.len().min(8)]),
-        (Some(b), None)    => format!("**Branch:** {}", b),
-        (None, Some(c))    => format!("**Commit:** {}", &c[..c.len().min(8)]),
-        (None, None)       => String::new(),
+        (Some(b), None) => format!("**Branch:** {}", b),
+        (None, Some(c)) => format!("**Commit:** {}", &c[..c.len().min(8)]),
+        (None, None) => String::new(),
     };
 
-    let claudemd_line = cp.claudemd_score
+    let claudemd_line = cp
+        .claudemd_score
         .map(|s| format!("\n**CLAUDE.md score:** {}/100", s))
         .unwrap_or_default();
 
     let files_section = if cp.files_changed.is_empty() {
         String::new()
     } else {
-        let list: String = cp.files_changed.iter()
+        let list: String = cp
+            .files_changed
+            .iter()
             .map(|f| format!("- {}\n", f))
             .collect();
         format!("\n## Files changed since last checkpoint\n{}", list)
@@ -225,14 +235,18 @@ fn git_branch(project_path: &str) -> Option<String> {
         .filter(|o| o.status.success())
         .map(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         })
         .flatten()
 }
 
 fn git_diff_files(project_path: &str, from: &str, to: Option<&str>) -> Option<Vec<String>> {
     let to_ref = to.unwrap_or("HEAD");
-    let range  = format!("{}..{}", from, to_ref);
+    let range = format!("{}..{}", from, to_ref);
     let out = Command::new("git")
         .args(["diff", "--name-only", &range])
         .current_dir(project_path)
@@ -262,7 +276,8 @@ fn random_hex8() -> String {
 
 /// Infer the most relevant project path from a session list.
 pub fn infer_project_path(sessions: &[ClaudeSession]) -> String {
-    sessions.iter()
+    sessions
+        .iter()
         .find(|s| s.is_active)
         .or_else(|| sessions.first())
         .map(|s| s.project_path.clone())

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use owo_colors::OwoColorize;
 
+use crate::metrics::record_empty_state;
 use crate::models::ClaudeSession;
 use crate::render::{context_bar, cost_colored, model_colored};
 use crate::{format, render};
@@ -11,7 +12,7 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
     if json {
         let val = match active {
             Some(s) => serde_json::to_value(s)?,
-            None    => serde_json::Value::Null,
+            None => serde_json::Value::Null,
         };
         println!("{}", serde_json::to_string_pretty(&val)?);
         return Ok(());
@@ -19,6 +20,7 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
 
     match active {
         None => {
+            record_empty_state("no_active_session");
             println!("{}", "○  No active session".dimmed());
         }
         Some(s) => {
@@ -45,10 +47,10 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
             );
 
             // Cost row
-            let cost   = cost_colored(s.total_cost);
-            let burn   = format!("{}/hr", format::cost(s.burn_rate_per_hour()));
-            let ctx    = context_bar(s.context_health_fraction(), 10);
-            let cache  = format!("{:.0}% cache", s.token_usage.cache_hit_rate() * 100.0);
+            let cost = cost_colored(s.total_cost);
+            let burn = format!("{}/hr", format::cost(s.burn_rate_per_hour()));
+            let ctx = context_bar(s.context_health_fraction(), 10);
+            let cache = format!("{:.0}% cache", s.token_usage.cache_hit_rate() * 100.0);
 
             println!(
                 "   Cost {}   Burn {}   Context {}   {}",
@@ -63,15 +65,16 @@ pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
                 + s.token_usage.output_tokens
                 + s.token_usage.cache_read_tokens
                 + s.token_usage.cache_write_tokens;
-            println!(
-                "   {} tokens",
-                format::tokens(total_tok).dimmed()
-            );
+            println!("   {} tokens", format::tokens(total_tok).dimmed());
 
             if let Some(score) = s.claudemd_score {
-                let label = if score >= 70 { "Good".green().to_string() }
-                    else if score >= 40    { "Basic".yellow().to_string() }
-                    else                   { "Poor".red().to_string() };
+                let label = if score >= 70 {
+                    "Good".green().to_string()
+                } else if score >= 40 {
+                    "Basic".yellow().to_string()
+                } else {
+                    "Poor".red().to_string()
+                };
                 println!("   CLAUDE.md quality: {} ({})", score, label);
             }
         }

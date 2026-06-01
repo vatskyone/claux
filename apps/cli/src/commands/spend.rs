@@ -1,10 +1,10 @@
 use anyhow::Result;
 use owo_colors::OwoColorize;
 
-use crate::models::ClaudeSession;
-use crate::spend::compute_spend;
-use crate::render::trend;
 use crate::format;
+use crate::models::ClaudeSession;
+use crate::render::trend;
+use crate::spend::compute_spend;
 
 pub fn run(sessions: &[ClaudeSession], json: bool) -> Result<()> {
     let s = compute_spend(sessions);

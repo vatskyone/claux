@@ -9,8 +9,14 @@ fn tags_path() -> Option<PathBuf> {
 
 /// Load all session tags from disk. Returns an empty map on any error.
 pub fn load_tags() -> HashMap<String, String> {
-    let path = match tags_path() { Some(p) => p, None => return HashMap::new() };
-    let text = match fs::read_to_string(&path) { Ok(t) => t, Err(_) => return HashMap::new() };
+    let path = match tags_path() {
+        Some(p) => p,
+        None => return HashMap::new(),
+    };
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return HashMap::new(),
+    };
     serde_json::from_str(&text).unwrap_or_default()
 }
 

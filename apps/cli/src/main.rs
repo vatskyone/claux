@@ -3,6 +3,7 @@ mod checkpoints;
 mod commands;
 mod config;
 mod format;
+mod metrics;
 mod models;
 mod monitor;
 mod parser;
@@ -10,15 +11,17 @@ mod render;
 mod skills;
 mod spend;
 mod tags;
+mod usage;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
-use clap_complete::{Shell, generate};
+use clap_complete::{generate, Shell};
 
 use commands::checkpoint::CheckpointAction;
 use commands::config::ConfigAction;
 use commands::export::ExportFormat;
 use commands::skills::SkillsAction;
+use metrics::record_command;
 use monitor::{load_sessions, SessionCache};
 
 #[derive(Parser)]
@@ -31,6 +34,19 @@ use monitor::{load_sessions, SessionCache};
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+}
+
+#[derive(clap::Subcommand)]
+enum AnalyticsAction {
+    /// Show local-only CLI usage metrics.
+    Local {
+        /// Reset local metrics after printing.
+        #[arg(long)]
+        reset: bool,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -59,8 +75,11 @@ enum Commands {
         json: bool,
     },
 
-    /// Show analytics: daily spend, by project, by model.
+    /// Show analytics or local metrics.
     Analytics {
+        /// Analytics subcommands.
+        #[command(subcommand)]
+        action: Option<AnalyticsAction>,
         /// Number of days to include in the daily chart.
         #[arg(long, default_value_t = 30)]
         days: usize,
@@ -83,11 +102,6 @@ enum Commands {
     },
 
     /// Get or set a label on a session. Use a unique ID prefix to identify the session.
-    ///
-    /// Examples:
-    ///   claux tag abc123          # show current tag
-    ///   claux tag abc123 "work"   # set tag
-    ///   claux tag abc123 -r       # remove tag
     Tag {
         /// Session ID prefix (unique prefix of the session ID shown in `claux sessions`).
         session: String,
@@ -108,29 +122,19 @@ enum Commands {
     },
 
     /// Get or set CLAUX configuration values.
-    ///
-    /// Keys: weekly-budget (USD), monthly-credit (USD)
-    /// Examples:
-    ///   claux config set weekly-budget 50
-    ///   claux config get weekly-budget
-    ///   claux config unset weekly-budget
     Config {
         #[command(subcommand)]
         action: ConfigAction,
     },
 
+    /// Inspect local environment, paths, and session parse health.
+    Doctor {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Save, list, load, or delete project checkpoints.
-    ///
-    /// A checkpoint captures a named snapshot of project state — git branch,
-    /// commit, cost to date, and files changed — so you can reload context
-    /// in a future session.
-    ///
-    /// Examples:
-    ///   claux checkpoint save "v0.7.0 complete"
-    ///   claux checkpoint list
-    ///   claux checkpoint load abc123
-    ///   claux checkpoint load abc123 --write   # also writes .claux/CONTEXT.md
-    ///   claux checkpoint delete abc123
     Checkpoint {
         #[command(subcommand)]
         action: CheckpointAction,
@@ -140,30 +144,34 @@ enum Commands {
     Tui,
 
     /// Print shell completion script (zsh, bash, fish).
-    ///
-    /// Usage: claux completions zsh >> ~/.zshrc
-    Completions {
-        shell: Shell,
-    },
+    Completions { shell: Shell },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let command = cli.command.unwrap_or(Commands::Status { json: false });
+    let metric_name = metric_name(&command);
 
-    // Shell completions — just print and exit.
+    let result = run_command(command);
+    match &result {
+        Ok(_) => record_command(metric_name, true, None),
+        Err(_) => record_command(metric_name, false, Some("command_error")),
+    }
+
+    result
+}
+
+fn run_command(command: Commands) -> Result<()> {
     if let Commands::Completions { shell } = &command {
         let mut cmd = Cli::command();
         generate(*shell, &mut cmd, "claux", &mut std::io::stdout());
         return Ok(());
     }
 
-    // The TUI manages its own session loading loop.
     if let Commands::Tui = &command {
         return commands::tui::run();
     }
 
-    // Account and skills don't need session loading.
     if let Commands::Account = &command {
         return commands::account::run();
     }
@@ -176,34 +184,59 @@ fn main() -> Result<()> {
     if let Commands::Checkpoint { action } = &command {
         return commands::checkpoint::run(action);
     }
+    if let Commands::Doctor { json } = &command {
+        return commands::doctor::run(*json);
+    }
 
-    // For all other commands, load sessions once.
     let mut cache = SessionCache::new();
-    let sessions  = load_sessions(&mut cache);
+    let sessions = load_sessions(&mut cache);
 
     match command {
-        Commands::Status { json } => {
-            commands::status::run(&sessions, json)?;
-        }
-        Commands::Sessions { limit, json } => {
-            commands::sessions::run(&sessions, limit, json)?;
-        }
-        Commands::Spend { json } => {
-            commands::spend::run(&sessions, json)?;
-        }
-        Commands::Analytics { days, json } => {
-            commands::analytics::run(&sessions, days, json)?;
-        }
-        Commands::Export { format, output, limit } => {
-            commands::export::run(&sessions, limit, format, output.as_deref())?;
-        }
-        Commands::Tag { session, label, remove } => {
-            commands::tag::run(&sessions, &session, label.as_deref(), remove)?;
-        }
-        Commands::Tui | Commands::Completions { .. } |
-        Commands::Account | Commands::Skills { .. } | Commands::Config { .. } |
-        Commands::Checkpoint { .. } => unreachable!(),
+        Commands::Status { json } => commands::status::run(&sessions, json)?,
+        Commands::Sessions { limit, json } => commands::sessions::run(&sessions, limit, json)?,
+        Commands::Spend { json } => commands::spend::run(&sessions, json)?,
+        Commands::Analytics { action, days, json } => match action {
+            Some(AnalyticsAction::Local { reset, json }) => {
+                commands::analytics::run_local_metrics(reset, json)?
+            }
+            None => commands::analytics::run(&sessions, days, json)?,
+        },
+        Commands::Export {
+            format,
+            output,
+            limit,
+        } => commands::export::run(&sessions, limit, format, output.as_deref())?,
+        Commands::Tag {
+            session,
+            label,
+            remove,
+        } => commands::tag::run(&sessions, &session, label.as_deref(), remove)?,
+        Commands::Completions { .. }
+        | Commands::Tui
+        | Commands::Account
+        | Commands::Skills { .. }
+        | Commands::Config { .. }
+        | Commands::Checkpoint { .. }
+        | Commands::Doctor { .. } => unreachable!(),
     }
 
     Ok(())
+}
+
+fn metric_name(command: &Commands) -> &'static str {
+    match command {
+        Commands::Status { .. } => "status",
+        Commands::Sessions { .. } => "sessions",
+        Commands::Spend { .. } => "spend",
+        Commands::Analytics { .. } => "analytics",
+        Commands::Export { .. } => "export",
+        Commands::Tag { .. } => "tag",
+        Commands::Account => "account",
+        Commands::Skills { .. } => "skills",
+        Commands::Config { .. } => "config",
+        Commands::Doctor { .. } => "doctor",
+        Commands::Checkpoint { .. } => "checkpoint",
+        Commands::Tui => "tui",
+        Commands::Completions { .. } => "completions",
+    }
 }

@@ -10,13 +10,13 @@ pub fn load_skills() -> Vec<SkillInfo> {
     // Seed from skillUsage (covers all known skills including builtins)
     for (name, (count, last)) in &usage {
         skills.push(SkillInfo {
-            name:         name.clone(),
-            source:       SkillSource::Builtin,
-            description:  None,
-            usage_count:  *count,
+            name: name.clone(),
+            source: SkillSource::Builtin,
+            description: None,
+            usage_count: *count,
             last_used_ms: *last,
-            rating:       skill_rating(*count),
-            content:      None,
+            rating: skill_rating(*count),
+            content: None,
         });
     }
 
@@ -26,17 +26,28 @@ pub fn load_skills() -> Vec<SkillInfo> {
             if let Ok(entries) = fs::read_dir(&skills_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if !path.is_dir() { continue; }
-                    let name       = entry.file_name().to_string_lossy().to_string();
-                    let skill_md   = path.join("SKILL.md");
-                    if !skill_md.exists() { continue; }
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let skill_md = path.join("SKILL.md");
+                    if !skill_md.exists() {
+                        continue;
+                    }
 
-                    let content     = fs::read_to_string(&skill_md).ok();
-                    let description = content.as_deref()
-                        .and_then(|c| c.lines().find(|l| !l.trim().is_empty() && !l.trim().starts_with('#')))
-                        .or_else(|| content.as_deref()
-                            .and_then(|c| c.lines().find(|l| !l.trim().is_empty()))
-                            .map(|l| l.trim_start_matches('#').trim()))
+                    let content = fs::read_to_string(&skill_md).ok();
+                    let description = content
+                        .as_deref()
+                        .and_then(|c| {
+                            c.lines()
+                                .find(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+                        })
+                        .or_else(|| {
+                            content
+                                .as_deref()
+                                .and_then(|c| c.lines().find(|l| !l.trim().is_empty()))
+                                .map(|l| l.trim_start_matches('#').trim())
+                        })
                         .map(|s| s.to_string());
 
                     let (count, last) = usage.get(&name).copied().unwrap_or((0, None));
@@ -45,11 +56,11 @@ pub fn load_skills() -> Vec<SkillInfo> {
                     skills.retain(|s| s.name != name);
                     skills.push(SkillInfo {
                         name,
-                        source:       SkillSource::Custom,
+                        source: SkillSource::Custom,
                         description,
-                        usage_count:  count,
+                        usage_count: count,
                         last_used_ms: last,
-                        rating:       skill_rating(count),
+                        rating: skill_rating(count),
                         content,
                     });
                 }
@@ -65,10 +76,10 @@ pub fn load_skills() -> Vec<SkillInfo> {
 /// 1–5 star rating based on cumulative usage count.
 pub fn skill_rating(count: usize) -> u8 {
     match count {
-        0       => 1,
-        1..=2   => 2,
-        3..=9   => 3,
+        0 => 1,
+        1..=2 => 2,
+        3..=9 => 3,
         10..=29 => 4,
-        _       => 5,
+        _ => 5,
     }
 }

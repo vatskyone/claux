@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?style=flat-square" />
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/version-0.6.0-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-0.7.1-informational?style=flat-square" />
 </p>
 
 ---
@@ -145,6 +145,14 @@ Flags: `--json`
 
 Flags: `--days N` (default 30), `--json`
 
+Local-only product metrics:
+
+```bash
+claux analytics local
+claux analytics local --json
+claux analytics local --reset
+```
+
 ---
 
 ### `claux export`
@@ -236,13 +244,33 @@ Skill ratings (1–5 stars) based on total invocations:
 Set budget limits stored in `~/.claude/claux/config.json`.
 
 ```bash
+claux config init                       # initialize defaults and source paths
 claux config set weekly-budget 50     # set $50/week budget
+claux config set plan-5h-limit 10     # set $10 / 5h usage limit
 claux config set monthly-credit 200   # set $200/month credit cap
+claux config set projects-root ~/.claude/projects
+claux config set sessions-root ~/.claude/sessions
 claux config get weekly-budget        # → 50.0
 claux config unset weekly-budget      # remove the limit
 ```
 
-Valid keys: `weekly-budget`, `monthly-credit` (values in USD).
+Valid keys:
+- `weekly-budget`
+- `plan-5h-limit`
+- `monthly-credit`
+- `projects-root`
+- `sessions-root`
+
+---
+
+### `claux doctor [--json]`
+
+Read-only diagnostics for session discovery and parse health.
+
+```bash
+claux doctor
+claux doctor --json
+```
 
 ---
 
@@ -373,8 +401,10 @@ Skill list (top 40% of screen) + detail panel (bottom 60%).
 ### Budget limits
 
 Set via `claux config`:
+- `plan-5h-limit` — enables the 5-hour usage bar in the Usage panel
 - `weekly-budget` — enables the weekly spend bar in the Usage panel
 - `monthly-credit` — enables the credit usage bar (requires `has_extra_usage` enabled on your account)
+- `projects-root` / `sessions-root` — override log discovery paths
 
 Stored in `~/.claude/claux/config.json`.
 
@@ -410,18 +440,21 @@ apps/cli/src/
 │                     # skill_rating() — uses → 1–5 star rating
 ├── config.rs         # load_claux_config() / save_claux_config()
 │                     # backed by ~/.claude/claux/config.json
+├── metrics.rs        # local-only usage metrics counters
+├── usage.rs          # shared usage-window/progress state helpers
 ├── tags.rs           # load_tags() / save_tag()
 │                     # backed by ~/.claude/claux/tags.json
 └── commands/
     ├── status.rs     # claux status
     ├── sessions.rs   # claux sessions
     ├── spend.rs      # claux spend
-    ├── analytics.rs  # claux analytics
+    ├── analytics.rs  # claux analytics (+ local metrics)
     ├── export.rs     # claux export (JSON + CSV)
     ├── tag.rs        # claux tag
     ├── account.rs    # claux account
     ├── skills.rs     # claux skills list|new|export|import
-    ├── config.rs     # claux config get|set|unset
+    ├── config.rs     # claux config get|set|unset|init
+    ├── doctor.rs     # claux doctor
     └── tui.rs        # ratatui TUI — App state machine · all draw_* functions
 ```
 
