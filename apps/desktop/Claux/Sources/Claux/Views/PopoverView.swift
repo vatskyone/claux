@@ -91,6 +91,11 @@ struct PopoverView: View {
                 } else {
                     NoActiveSessionView()
                 }
+
+                PlanLimitsCard(
+                    snapshot: store.planLimits,
+                    diagnostics: store.planLimitsDiagnostics
+                )
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

@@ -2,6 +2,26 @@
 
 ---
 
+## [1.8.1] — 2026-06-01
+
+### Improvements
+- **Plan-limits empty-state diagnostics** (`RateLimitMonitor.swift`, `Models.swift`, `AppStore.swift`, `Views/PlanLimitsCard.swift`, `Views/PopoverView.swift`) — Dashboard now explains *why* plan-limit bars are blank with explicit states: waiting for first API response, statusLine source not running, plan limits unavailable in current session payload, or stale data.
+- **Statusline debug-signal integration** (`RateLimitMonitor.swift`) — the rate-limit monitor now reads the local statusline debug signal (`statusline_debug.log`) to classify missing-data causes instead of showing a generic placeholder.
+
+---
+
+## [1.8.0] — 2026-06-01
+
+### New Features
+- **Plan limits dashboard card** (`Views/PlanLimitsCard.swift`, `Views/PopoverView.swift`) — added a new Dashboard card that shows Claude subscription usage for the **5-hour** and **7-day** windows with progress bars, used percentage, and reset countdowns.
+- **Plan-limit data model + monitor** (`Models.swift`, `RateLimitMonitor.swift`, `AppStore.swift`) — introduced `PlanLimitsSnapshot` / `PlanLimitWindow` and a local `RateLimitMonitor` that watches `<monitoredDirectory>/claux/rate_limits.json`, parses usage windows, and publishes updates into app state.
+
+### Improvements
+- **Manual refresh now includes plan limits** (`AppStore.swift`) — pressing refresh (or opening the popover) now updates both session data and plan-limit data.
+- **Dashboard fallback state for missing plan-limit data** (`Views/PlanLimitsCard.swift`) — when no snapshot is present, the card renders an explicit “No plan-limit data yet” state with the expected local file path.
+
+---
+
 ## [1.7.2] — 2026-05-30
 
 ### Bug Fixes

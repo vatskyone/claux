@@ -12,9 +12,12 @@ final class AppStore: ObservableObject {
     @Published var dailySpend:       [DailySpend]     = []
     @Published var projectBreakdown: [ProjectSpend]   = []
     @Published var modelBreakdown:   [ModelSpend]     = []
+    @Published var planLimits:       PlanLimitsSnapshot = .empty
+    @Published var planLimitsDiagnostics: PlanLimitsDiagnostics = .defaultState
 
     // MARK: – Private
-    private let monitor      = SessionMonitor()
+    private let monitor          = SessionMonitor()
+    private let rateLimitMonitor = RateLimitMonitor()
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: – Init
@@ -24,6 +27,20 @@ final class AppStore: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in
                 self?.updateUI(from: sessions)
+            }
+            .store(in: &cancellables)
+
+        rateLimitMonitor.$snapshot
+            .receive(on: RunLoop.main)
+            .sink { [weak self] snapshot in
+                self?.planLimits = snapshot
+            }
+            .store(in: &cancellables)
+
+        rateLimitMonitor.$diagnostics
+            .receive(on: RunLoop.main)
+            .sink { [weak self] diagnostics in
+                self?.planLimitsDiagnostics = diagnostics
             }
             .store(in: &cancellables)
 
@@ -38,6 +55,7 @@ final class AppStore: ObservableObject {
     /// Force an immediate re-scan of the monitored directory.
     func refreshNow() {
         monitor.refresh()
+        rateLimitMonitor.refresh()
     }
 
     /// Wipe all app-level UserDefaults keys and force a fresh scan.
@@ -53,6 +71,7 @@ final class AppStore: ObservableObject {
         keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         monitor.invalidateCache()
         monitor.refresh()
+        rateLimitMonitor.refresh()
     }
 
     // MARK: – Private helpers

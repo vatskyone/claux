@@ -144,3 +144,62 @@ struct ModelSpend: Identifiable {
     let totalCost:    Double
     let sessionCount: Int
 }
+
+// MARK: – Plan limit usage windows (Claude subscription limits)
+struct PlanLimitWindow {
+    /// Percent used in this window (0–100). Nil when unavailable.
+    var usedPercentage: Double?
+    /// Next reset timestamp for this window.
+    var resetsAt: Date?
+
+    var hasData: Bool {
+        usedPercentage != nil || resetsAt != nil
+    }
+
+    /// Normalized progress (0–1), clamped for bar rendering.
+    var progressFraction: Double {
+        let pct = usedPercentage ?? 0
+        return max(0, min(pct / 100.0, 1.0))
+    }
+}
+
+struct PlanLimitsSnapshot {
+    var fiveHour: PlanLimitWindow
+    var sevenDay: PlanLimitWindow
+    /// Last update timestamp written by the collector script.
+    var updatedAt: Date?
+
+    var hasAnyData: Bool {
+        fiveHour.hasData || sevenDay.hasData
+    }
+
+    /// True when data is old enough that it should be treated as stale.
+    var isStale: Bool {
+        guard let updatedAt else { return true }
+        return Date().timeIntervalSince(updatedAt) > 900
+    }
+
+    static let empty = PlanLimitsSnapshot(
+        fiveHour: PlanLimitWindow(),
+        sevenDay: PlanLimitWindow(),
+        updatedAt: nil
+    )
+}
+
+enum PlanLimitSourceState {
+    case ready
+    case waitingForFirstResponse
+    case limitsUnavailableForSession
+    case statusLineNotRunning
+    case staleData
+}
+
+struct PlanLimitsDiagnostics {
+    var state: PlanLimitSourceState
+    var message: String
+
+    static let defaultState = PlanLimitsDiagnostics(
+        state: .statusLineNotRunning,
+        message: "Waiting for statusLine source…"
+    )
+}
