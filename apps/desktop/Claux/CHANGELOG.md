@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.0] — 2026-06-02
+
+### New Features
+- **Active-session quality shortcut** (`Views/PopoverView.swift`) — added a new dashboard/header icon beside refresh that opens the same per-session quality and acceptance detail sheet for the current live session, so users can inspect session quality without switching to History first.
+
 ## [1.9.0] — 2026-06-02
 
 ### New Features

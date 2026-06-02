@@ -189,6 +189,25 @@ struct PopoverView: View {
             HStack(spacing: 2) {
                 Spacer()
                 Button {
+                    guard let session = store.activeSession else { return }
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedSession = session
+                    }
+                } label: {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(
+                            store.activeSession != nil
+                                ? Color(nsColor: .secondaryLabelColor)
+                                : Color(nsColor: .tertiaryLabelColor)
+                        )
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.activeSession == nil)
+                .help(store.activeSession != nil ? "Open current session details" : "No active session")
+
+                Button {
                     store.refreshNow()
                 } label: {
                     Image(systemName: "arrow.clockwise")
