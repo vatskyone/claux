@@ -216,7 +216,7 @@ struct PopoverView: View {
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
-                .help("Refresh sessions now")
+                .help("Refresh sessions and plan limits")
 
                 Button {
                     NSApp.activate(ignoringOtherApps: true)

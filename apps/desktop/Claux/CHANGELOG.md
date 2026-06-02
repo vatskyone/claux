@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.3] — 2026-06-02
+
+### Improvements
+- **Refresh action wording clarified** (`Views/PopoverView.swift`) — updated the Dashboard refresh button tooltip to explicitly say it refreshes both session data and plan-limit stats, matching the existing `AppStore.refreshNow()` behavior.
+
 ## [1.10.2] — 2026-06-02
 
 ### Improvements
