@@ -156,6 +156,10 @@ struct PlanLimitsCard: View {
                             .foregroundStyle(Color(nsColor: .secondaryLabelColor))
 
                         if title == "7-day window" {
+                            Text("·")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+
                             Text("All models")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(Color(nsColor: .tertiaryLabelColor))

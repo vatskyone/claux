@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.5] — 2026-06-02
+
+### Improvements
+- **Weekly plan-limit label spacing** (`Views/PlanLimitsCard.swift`) — added a separator dot between `7-day window` and `All models` to improve readability and spacing in the Dashboard header row.
+
 ## [1.10.4] — 2026-06-02
 
 ### Improvements
