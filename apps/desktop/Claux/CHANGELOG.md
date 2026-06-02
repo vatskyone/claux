@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.2] — 2026-06-02
+
+### Improvements
+- **Forced 24-hour reset timestamps** (`Views/PlanLimitsCard.swift`) — the Dashboard plan-limit reset labels now use explicit 24-hour formatting (`HH:mm` and `DD Mon HH:mm`) instead of locale-dependent time output.
+
 ## [1.10.1] — 2026-06-02
 
 ### Improvements
