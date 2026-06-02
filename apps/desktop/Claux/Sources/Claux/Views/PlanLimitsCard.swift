@@ -150,9 +150,17 @@ struct PlanLimitsCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(title)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    HStack(spacing: 4) {
+                        Text(title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+
+                        if title == "7-day window" {
+                            Text("All models")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                        }
+                    }
                     Spacer()
                     Text(pctText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))

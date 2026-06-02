@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.4] — 2026-06-02
+
+### Improvements
+- **7-day plan-limit label clarified** (`Views/PlanLimitsCard.swift`) — added an `All models` label next to the 7-day window title in the Dashboard so the scope of the weekly limit is explicit.
+
 ## [1.10.3] — 2026-06-02
 
 ### Improvements
