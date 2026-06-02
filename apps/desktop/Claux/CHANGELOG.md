@@ -2,6 +2,11 @@
 
 ---
 
+## [1.10.1] — 2026-06-02
+
+### Improvements
+- **Exact plan-limit reset timestamps** (`Views/PlanLimitsCard.swift`) — the Dashboard now shows both the countdown and the exact local reset moment for each plan window: `HH:mm` for the 5-hour window and `DD Mon HH:mm` for the 7-day window.
+
 ## [1.10.0] — 2026-06-02
 
 ### New Features

@@ -164,7 +164,7 @@ struct PlanLimitsCard: View {
                                 .font(.system(size: 10))
                                 .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                             Spacer()
-                            Text(relativeResetTime(until: resetsAt))
+                            Text(resetDisplayText(title: title, until: resetsAt))
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                         } else {
@@ -197,5 +197,28 @@ struct PlanLimitsCard: View {
             return "\(days)d \(hours)h"
         }
         return "\(hours)h \(minutes)m"
+    }
+
+    private func resetDisplayText(title: String, until date: Date) -> String {
+        let countdown = relativeResetTime(until: date)
+        return "\(countdown) · \(absoluteResetTime(title: title, date: date))"
+    }
+
+    private func absoluteResetTime(title: String, date: Date) -> String {
+        if title == "5-hour window" {
+            return date.formatted(
+                .dateTime
+                .hour(.twoDigits(amPM: .omitted))
+                .minute(.twoDigits)
+            )
+        }
+
+        return date.formatted(
+            .dateTime
+            .day(.twoDigits)
+            .month(.abbreviated)
+            .hour(.twoDigits(amPM: .omitted))
+            .minute(.twoDigits)
+        )
     }
 }
