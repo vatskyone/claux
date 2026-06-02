@@ -20,6 +20,60 @@ struct TokenUsage {
     }
 }
 
+// MARK: – Per-session quality metrics
+struct SessionQualityMetrics {
+    var permissionMode: String? = nil
+    var assistantTurns: Int = 0
+    var successfulAssistantTurns: Int = 0
+    var toolProposals: Int = 0
+    var toolResults: Int = 0
+    var successfulToolResults: Int = 0
+    var failedToolResults: Int = 0
+    var rejectedToolResults: Int = 0
+    var editProposals: Int = 0
+    var acceptedEdits: Int = 0
+    var rejectedEdits: Int = 0
+    var acceptedUnmodifiedEdits: Int = 0
+    var acceptedModifiedEdits: Int = 0
+    var completedAgents: Int = 0
+    var failedAgents: Int = 0
+    var touchedFiles: [String] = []
+    var score: Int = 0
+
+    var assistantSuccessRatio: Double {
+        guard assistantTurns > 0 else { return 0 }
+        return Double(successfulAssistantTurns) / Double(assistantTurns)
+    }
+
+    var toolSuccessRatio: Double {
+        guard toolResults > 0 else { return 1.0 }
+        return Double(successfulToolResults) / Double(toolResults)
+    }
+
+    var editAcceptanceRatio: Double {
+        guard editProposals > 0 else { return 1.0 }
+        return Double(acceptedEdits) / Double(editProposals)
+    }
+
+    var acceptedAsSuggestedRatio: Double {
+        guard acceptedEdits > 0 else { return 1.0 }
+        return Double(acceptedUnmodifiedEdits) / Double(acceptedEdits)
+    }
+
+    var touchedFileCount: Int {
+        touchedFiles.count
+    }
+
+    var scoreLabel: String {
+        switch score {
+        case 85...: return "Excellent"
+        case 70...: return "Strong"
+        case 50...: return "Mixed"
+        default: return "Weak"
+        }
+    }
+}
+
 // MARK: – Per-model context-window limits (tokens)
 enum ModelContextLimit {
     static func forModel(_ model: String) -> Int {
@@ -52,6 +106,9 @@ struct ClaudeSession: Identifiable {
     /// Cost broken down by calendar day (midnight local time → cost).
     /// Used to attribute multi-day sessions to the correct day bucket in spend summaries.
     var dailyCosts: [Date: Double] = [:]
+
+    /// Session-level acceptance, execution, and quality metrics derived from JSONL tool flows.
+    var qualityMetrics: SessionQualityMetrics = SessionQualityMetrics()
 
     // MARK: Derived
 

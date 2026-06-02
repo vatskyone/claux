@@ -41,6 +41,33 @@ private func parseISO(_ s: String) -> Date? {
     isoFull.date(from: s) ?? isoBasic.date(from: s)
 }
 
+private enum ParsedToolKind {
+    case edit
+    case agent
+    case other
+}
+
+private struct ToolProposal {
+    let kind: ParsedToolKind
+    let name: String
+    let assistantUUID: String?
+}
+
+private struct AssistantTurnQuality {
+    var stopReason: String
+    var hadToolUse: Bool = false
+    var successfulResults: Int = 0
+    var failedResults: Int = 0
+    var rejectedResults: Int = 0
+
+    var isSuccessful: Bool {
+        if !hadToolUse {
+            return stopReason == "end_turn"
+        }
+        return successfulResults > 0 && failedResults == 0 && rejectedResults == 0
+    }
+}
+
 // MARK: – Session parser
 enum SessionParser {
 
@@ -68,7 +95,11 @@ enum SessionParser {
         var totalCost    = 0.0
         var lastContextWindow = 0
         var dailyCosts: [Date: Double] = [:]
+        var qualityMetrics = SessionQualityMetrics()
         let calendar = Calendar.current
+        var touchedFiles = Set<String>()
+        var toolProposals: [String: ToolProposal] = [:]
+        var assistantQuality: [String: AssistantTurnQuality] = [:]
 
         // Timestamp of the entry currently being processed.
         // Set before the assistant-branch guard so each assistant turn
@@ -94,18 +125,140 @@ enum SessionParser {
                 projectPath = cwd
             }
 
+            // Session permission mode (e.g. default, acceptEdits)
+            if qualityMetrics.permissionMode == nil,
+               let mode = obj["permissionMode"] as? String,
+               !mode.isEmpty {
+                qualityMetrics.permissionMode = mode
+            }
+
             // Entrypoint (capture once — "claude-vscode", "terminal", "api", …)
             if entrypoint == nil, let ep = obj["entrypoint"] as? String, !ep.isEmpty {
                 entrypoint = ep
             }
 
             let type = obj["type"] as? String ?? ""
+            let entryUUID = obj["uuid"] as? String
 
             // AI-generated session title (from "ai-title" entries)
             // Note: the JSONL field is "aiTitle" (camelCase), not "title"
             if type == "ai-title", sessionTitle == nil,
                let t = obj["aiTitle"] as? String, !t.isEmpty {
                 sessionTitle = t
+            }
+
+            if type == "assistant" {
+                qualityMetrics.assistantTurns += 1
+
+                let stopReason = ((obj["message"] as? [String: Any])?["stop_reason"] as? String)
+                    ?? (obj["stop_reason"] as? String)
+                    ?? ""
+                if let entryUUID {
+                    assistantQuality[entryUUID] = AssistantTurnQuality(stopReason: stopReason)
+                }
+
+                if let blocks = ((obj["message"] as? [String: Any])?["content"] as? [[String: Any]]) {
+                    for block in blocks {
+                        guard block["type"] as? String == "tool_use",
+                              let toolUseId = block["id"] as? String,
+                              !toolUseId.isEmpty else { continue }
+
+                        let toolName = block["name"] as? String ?? ""
+                        let kind: ParsedToolKind
+                        switch toolName {
+                        case "Edit", "Write", "MultiEdit":
+                            kind = .edit
+                            qualityMetrics.editProposals += 1
+                        case "Agent":
+                            kind = .agent
+                        default:
+                            kind = .other
+                        }
+
+                        qualityMetrics.toolProposals += 1
+                        toolProposals[toolUseId] = ToolProposal(
+                            kind: kind,
+                            name: toolName,
+                            assistantUUID: entryUUID
+                        )
+
+                        if let entryUUID {
+                            assistantQuality[entryUUID]?.hadToolUse = true
+                        }
+                    }
+                }
+            }
+
+            if type == "user",
+               let msgBody = obj["message"] as? [String: Any],
+               let content = msgBody["content"] as? [[String: Any]] {
+                for block in content where block["type"] as? String == "tool_result" {
+                    qualityMetrics.toolResults += 1
+
+                    let toolUseId = block["tool_use_id"] as? String ?? ""
+                    let proposal = toolProposals[toolUseId]
+                    let toolResult = obj["toolUseResult"]
+
+                    let contentText = SessionParser.flattenToolResultContent(block["content"])
+                    let isError = (block["is_error"] as? Bool) == true
+                    let rejected = SessionParser.isRejectedToolResult(
+                        blockContent: contentText,
+                        topLevelToolResult: toolResult
+                    )
+                    let succeeded = !rejected && !isError
+
+                    if rejected {
+                        qualityMetrics.rejectedToolResults += 1
+                    } else if succeeded {
+                        qualityMetrics.successfulToolResults += 1
+                    } else {
+                        qualityMetrics.failedToolResults += 1
+                    }
+
+                    if let assistantUUID = proposal?.assistantUUID {
+                        if rejected {
+                            assistantQuality[assistantUUID]?.rejectedResults += 1
+                        } else if succeeded {
+                            assistantQuality[assistantUUID]?.successfulResults += 1
+                        } else {
+                            assistantQuality[assistantUUID]?.failedResults += 1
+                        }
+                    }
+
+                    switch proposal?.kind {
+                    case .edit:
+                        if rejected || isError {
+                            qualityMetrics.rejectedEdits += 1
+                        } else {
+                            qualityMetrics.acceptedEdits += 1
+                            let userModified = SessionParser.boolValue(
+                                at: ["userModified"],
+                                in: toolResult
+                            ) ?? false
+                            if userModified {
+                                qualityMetrics.acceptedModifiedEdits += 1
+                            } else {
+                                qualityMetrics.acceptedUnmodifiedEdits += 1
+                            }
+                            if let filePath = SessionParser.toolResultFilePath(toolResult) {
+                                touchedFiles.insert(filePath)
+                            }
+                        }
+                    case .agent:
+                        let status = SessionParser.stringValue(at: ["status"], in: toolResult) ?? ""
+                        if status == "completed" || succeeded {
+                            qualityMetrics.completedAgents += 1
+                        } else {
+                            qualityMetrics.failedAgents += 1
+                        }
+                    case .other, .none:
+                        if succeeded,
+                           let filePath = SessionParser.toolResultFilePath(toolResult),
+                           SessionParser.looksLikeFileWriteTool(named: proposal?.name) {
+                            touchedFiles.insert(filePath)
+                        }
+                    }
+                }
             }
 
             // Cost & token data only from assistant entries
@@ -164,6 +317,10 @@ enum SessionParser {
 
         guard let startTime = firstDate else { return nil }
 
+        qualityMetrics.successfulAssistantTurns = assistantQuality.values.filter(\.isSuccessful).count
+        qualityMetrics.touchedFiles = touchedFiles.sorted()
+        qualityMetrics.score = computeQualityScore(for: qualityMetrics)
+
         // Score the project's CLAUDE.md if we have a path
         let claudemdScore: Int? = projectPath.flatMap { SessionParser.scoreClaudeMd(at: $0) }
 
@@ -195,8 +352,92 @@ enum SessionParser {
             title:        sessionTitle,
             entrypoint:   entrypoint,
             claudemdScore: claudemdScore,
-            dailyCosts:   dailyCosts
+            dailyCosts:   dailyCosts,
+            qualityMetrics: qualityMetrics
         )
+    }
+
+    private static func flattenToolResultContent(_ value: Any?) -> String {
+        if let text = value as? String {
+            return text
+        }
+        if let blocks = value as? [[String: Any]] {
+            return blocks
+                .compactMap { block in
+                    if let text = block["text"] as? String { return text }
+                    if let text = block["content"] as? String { return text }
+                    return nil
+                }
+                .joined(separator: "\n")
+        }
+        return ""
+    }
+
+    private static func stringValue(at path: [String], in root: Any?) -> String? {
+        var current = root
+        for key in path {
+            guard let dict = current as? [String: Any] else { return nil }
+            current = dict[key]
+        }
+        return current as? String
+    }
+
+    private static func boolValue(at path: [String], in root: Any?) -> Bool? {
+        var current = root
+        for key in path {
+            guard let dict = current as? [String: Any] else { return nil }
+            current = dict[key]
+        }
+        return current as? Bool
+    }
+
+    private static func toolResultFilePath(_ root: Any?) -> String? {
+        if let path = stringValue(at: ["filePath"], in: root), !path.isEmpty {
+            return path
+        }
+        if let path = stringValue(at: ["file", "filePath"], in: root), !path.isEmpty {
+            return path
+        }
+        return nil
+    }
+
+    private static func isRejectedToolResult(blockContent: String, topLevelToolResult: Any?) -> Bool {
+        let lowered = blockContent.lowercased()
+        if lowered.contains("tool use was rejected") || lowered.contains("user rejected tool use") {
+            return true
+        }
+        if let topText = topLevelToolResult as? String {
+            let loweredTop = topText.lowercased()
+            if loweredTop.contains("user rejected tool use") || loweredTop.contains("rejected") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func looksLikeFileWriteTool(named name: String?) -> Bool {
+        guard let name else { return false }
+        return ["Edit", "Write", "MultiEdit"].contains(name)
+    }
+
+    private static func computeQualityScore(for metrics: SessionQualityMetrics) -> Int {
+        let conversation = metrics.assistantSuccessRatio
+        let toolSuccess = metrics.toolSuccessRatio
+        let editAcceptance = metrics.editAcceptanceRatio
+        let adoption = metrics.acceptedAsSuggestedRatio
+        let rejectionPenalty: Double
+        if metrics.toolResults == 0 {
+            rejectionPenalty = 0
+        } else {
+            rejectionPenalty = Double(metrics.rejectedToolResults) / Double(metrics.toolResults)
+        }
+
+        let raw = (conversation * 0.35
+            + toolSuccess * 0.30
+            + editAcceptance * 0.25
+            + adoption * 0.10) * 100.0
+        let penalized = raw - (rejectionPenalty * 15.0)
+        return max(0, min(100, Int(penalized.rounded())))
     }
 
     // MARK: – CLAUDE.md directory search

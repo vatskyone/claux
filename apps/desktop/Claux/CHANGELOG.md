@@ -2,6 +2,15 @@
 
 ---
 
+## [1.9.0] — 2026-06-02
+
+### New Features
+- **Per-session acceptance and quality metrics** (`SessionParser.swift`, `Models.swift`) — each parsed session now tracks accepted edits, rejected actions, successful tool results, completed agents, touched files, and a derived session quality score from the local Claude Code JSONL.
+- **History session quality panel** (`Views/SessionDetailSheet.swift`) — tapping a session in the History tab now opens a richer detail sheet with a quality score bar, acceptance breakdown, rejected-action counts, agent outcome summary, permission mode badge, and touched-file context.
+
+### Improvements
+- **Scrollable session detail sheet** (`Views/SessionDetailSheet.swift`) — the session detail overlay now scrolls within the popover so expanded per-session diagnostics remain usable without clipping.
+
 ## [1.8.1] — 2026-06-01
 
 ### Improvements
