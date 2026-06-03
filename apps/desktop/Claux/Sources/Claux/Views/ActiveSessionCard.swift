@@ -133,11 +133,11 @@ struct ActiveSessionCard: View {
                         HStack(spacing: 3) {
                             Image(systemName: "brain")
                                 .font(.system(size: 9))
-                                .foregroundStyle(Color(nsColor: .systemBlue))
+                                .foregroundStyle(Color.clauxBlue)
                             // Shows percentage AND actual count: "35% (12.5K) thinking"
                             Text("\(pct)% (\(Format.tokens(session.tokenUsage.thinkingTokens))) thinking")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color(nsColor: .systemBlue))
+                                .foregroundStyle(Color.clauxBlue)
                         }
                     }
                     Spacer()
@@ -151,9 +151,9 @@ struct ActiveSessionCard: View {
                 if session.cacheHitRate > 0 {
                     let hitRate = session.cacheHitRate
                     let cacheColor: Color = {
-                        if hitRate >= 0.60 { return Color(nsColor: .systemGreen) }
-                        if hitRate >= 0.30 { return Color(nsColor: .systemYellow) }
-                        return Color(nsColor: .systemRed)
+                        if hitRate >= 0.60 { return .clauxGreen }
+                        if hitRate >= 0.30 { return .clauxOrange }
+                        return .clauxRed
                     }()
 
                     HStack(spacing: 5) {
@@ -194,11 +194,7 @@ struct ActiveSessionCard: View {
 
     private var contextRow: some View {
         let fraction  = session.contextHealthFraction
-        let barColor: Color = {
-            if fraction < 0.70 { return Color(nsColor: .systemBlue) }
-            if fraction < 0.90 { return Color(nsColor: .systemYellow) }
-            return Color(nsColor: .systemRed)
-        }()
+        let barColor = Color.contextHealthColor(fraction)
         let label: String = {
             if fraction < 0.70 { return "Healthy" }
             if fraction < 0.90 { return "Warning" }
@@ -243,9 +239,9 @@ struct ActiveSessionCard: View {
     // MARK: – CLAUDE.md quality row
 
     private func claudemdRow(score: Int) -> some View {
-        let barColor: Color = score >= 70 ? Color(nsColor: .systemGreen)
-                            : score >= 40 ? Color(nsColor: .systemYellow)
-                            :               Color(nsColor: .systemRed)
+        let barColor: Color = score >= 70 ? .clauxGreen
+                            : score >= 40 ? .clauxOrange
+                            :               .clauxRed
 
         let belowThreshold = claudemdAlertEnabled && score < claudemdThreshold
 
@@ -262,7 +258,7 @@ struct ActiveSessionCard: View {
                 if belowThreshold {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color(nsColor: .systemYellow))
+                        .foregroundStyle(Color.clauxOrange)
                 }
                 HStack(spacing: 4) {
                     Text("\(score)")
@@ -289,7 +285,7 @@ struct ActiveSessionCard: View {
             if belowThreshold {
                 Text("Consider updating your CLAUDE.md for better AI context")
                     .font(.system(size: 10))
-                    .foregroundStyle(Color(nsColor: .systemYellow).opacity(0.9))
+                    .foregroundStyle(Color.clauxOrange.opacity(0.9))
             }
         }
         .padding(.horizontal, 12)

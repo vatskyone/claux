@@ -2,6 +2,20 @@
 
 ---
 
+## [1.12.0] — 2026-06-03
+
+### New Features
+- **Additional accessible state palettes** (`Design.swift`, `Views/SettingsView.swift`) — added `High Contrast`, `Colorblind Safe`, and `Soft Contrast` options to the in-app `State colors` selector so users can choose a more legible blue/green/orange/red palette for badges, warnings, progress bars, and session stats.
+
+## [1.11.0] — 2026-06-03
+
+### New Features
+- **State color palette switcher** (`Views/SettingsView.swift`, `Design.swift`) — added an in-app `State colors` setting with `System` and `Vivid` palettes plus a live blue/green/orange/red preview so state and stat colors can be reviewed without code changes.
+
+### Improvements
+- **Normalized state palette** (`Design.swift`) — introduced shared semantic blue/green/orange/red helpers and a consistent warning-orange ramp for usage, warnings, badges, and status states.
+- **State/stat views migrated to semantic colors** (`Views/ActiveSessionCard.swift`, `Views/AnalyticsView.swift`, `Views/ContextHealthBar.swift`, `Views/OnboardingView.swift`, `Views/PlanLimitsCard.swift`, `Views/PopoverView.swift`, `Views/SessionDetailSheet.swift`, `Views/SpendSummaryView.swift`, `Views/TokenBreakdownView.swift`) — the key session, analytics, onboarding, and dashboard surfaces now respect the selected palette instead of mixing direct macOS system colors.
+
 ## [1.10.9] — 2026-06-03
 
 ### Bug Fixes

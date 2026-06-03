@@ -4,13 +4,37 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.10.9"
+    static let current = "1.12.0"
+}
+
+enum StateColorPreset: String, CaseIterable, Identifiable {
+    case system
+    case vivid
+    case highContrast
+    case colorblindSafe
+    case softContrast
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .vivid:  return "Vivid"
+        case .highContrast: return "High Contrast"
+        case .colorblindSafe: return "Colorblind Safe"
+        case .softContrast: return "Soft Contrast"
+        }
+    }
 }
 
 // MARK: – Semantic system colours
 // NSColor-backed → auto-adapts to light / dark mode.
 // Accent is pinned to systemBlue to match macOS menu chrome (Wi-Fi toggle, etc.).
 extension Color {
+    private static var currentStatePalette: StateColorPreset {
+        let rawValue = UserDefaults.standard.string(forKey: "stateColorPreset") ?? StateColorPreset.system.rawValue
+        return StateColorPreset(rawValue: rawValue) ?? .system
+    }
 
     // Backgrounds
     static let clauxBackground = Color(nsColor: .windowBackgroundColor)
@@ -24,29 +48,98 @@ extension Color {
     static let clauxSecondary  = Color(nsColor: .secondaryLabelColor)
     static let clauxTertiary   = Color(nsColor: .tertiaryLabelColor)
 
-    // Accent — system blue, matching macOS interactive chrome (Wi-Fi toggle, etc.)
-    static let clauxAccent     = Color(nsColor: .systemBlue)
+    // Accent / state colours
+    static var clauxBlue: Color {
+        switch currentStatePalette {
+        case .system:
+            return Color(nsColor: .systemBlue)
+        case .vivid:
+            return Color(red: 0.10, green: 0.56, blue: 0.98)
+        case .highContrast:
+            return Color(red: 0.00, green: 0.36, blue: 0.86)
+        case .colorblindSafe:
+            return Color(red: 0.00, green: 0.45, blue: 0.70)
+        case .softContrast:
+            return Color(red: 0.25, green: 0.53, blue: 0.88)
+        }
+    }
+
+    static var clauxGreen: Color {
+        switch currentStatePalette {
+        case .system:
+            return Color.green
+        case .vivid:
+            return Color(red: 0.12, green: 0.76, blue: 0.40)
+        case .highContrast:
+            return Color(red: 0.00, green: 0.62, blue: 0.30)
+        case .colorblindSafe:
+            return Color(red: 0.00, green: 0.62, blue: 0.58)
+        case .softContrast:
+            return Color(red: 0.22, green: 0.67, blue: 0.46)
+        }
+    }
+
+    static var clauxOrange: Color {
+        switch currentStatePalette {
+        case .system:
+            return Color(nsColor: .systemOrange)
+        case .vivid:
+            return Color(red: 0.95, green: 0.56, blue: 0.13)
+        case .highContrast:
+            return Color(red: 0.88, green: 0.47, blue: 0.00)
+        case .colorblindSafe:
+            return Color(red: 0.90, green: 0.62, blue: 0.00)
+        case .softContrast:
+            return Color(red: 0.88, green: 0.60, blue: 0.22)
+        }
+    }
+
+    static var clauxRed: Color {
+        switch currentStatePalette {
+        case .system:
+            return Color(nsColor: .systemRed)
+        case .vivid:
+            return Color(red: 0.90, green: 0.24, blue: 0.21)
+        case .highContrast:
+            return Color(red: 0.78, green: 0.12, blue: 0.18)
+        case .colorblindSafe:
+            return Color(red: 0.80, green: 0.27, blue: 0.53)
+        case .softContrast:
+            return Color(red: 0.82, green: 0.30, blue: 0.35)
+        }
+    }
+
+    // Accent — aligned with the normalized state blue
+    static var clauxAccent: Color { .clauxBlue }
     // Legacy alias kept for source compatibility
     static var clauxGold: Color { .clauxAccent }
 
-    // Semantic status colours
-    static let clauxGreen  = Color.green
-    static let clauxYellow = Color.yellow
-    static let clauxRed    = Color(nsColor: .systemRed)
+    // Legacy warning alias kept for source compatibility
+    static var clauxYellow: Color { .clauxOrange }
 
     // Model badges
     static let clauxOpusColor   = Color(nsColor: .systemPurple)
-    static let clauxSonnetColor = Color(nsColor: .systemBlue)
-    static let clauxHaikuColor  = Color(nsColor: .systemGreen)
+    static var clauxSonnetColor: Color { .clauxBlue }
+    static var clauxHaikuColor: Color { .clauxGreen }
 }
 
 // MARK: – Context-health colour helper
-// Healthy = blue (matches macOS progress/toggle blue), warning = yellow, critical = red
+// Healthy = blue, warning = orange, critical = red
 extension Color {
     static func contextHealthColor(_ fraction: Double) -> Color {
         if fraction < 0.70 { return .clauxAccent }
-        if fraction < 0.90 { return .clauxYellow }
+        if fraction < 0.90 { return .clauxOrange }
         return .clauxRed
+    }
+
+    static func usageRamp(_ fraction: Double) -> Color {
+        if fraction < 0.70 { return .clauxBlue }
+        if fraction < 0.90 { return .clauxOrange }
+        return .clauxRed
+    }
+
+    static func positiveTrend(_ isPositive: Bool) -> Color {
+        isPositive ? .clauxOrange : .clauxGreen
     }
 }
 

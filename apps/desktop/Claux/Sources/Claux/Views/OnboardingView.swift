@@ -11,6 +11,7 @@ struct OnboardingView: View {
     @ObservedObject private var statusLineManager = ClaudeStatusLineManager.shared
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
     @AppStorage("monitoredDirectory")  private var watchDirectory:      String = "~/.claude"
+    @AppStorage("stateColorPreset")    private var stateColorPreset:    String = StateColorPreset.system.rawValue
 
     @State private var step: Int = 0
 
@@ -83,6 +84,7 @@ struct OnboardingView: View {
         }
         .background(.thickMaterial)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .id(stateColorPreset)
     }
 
     // MARK: – Step 1: Welcome
@@ -384,7 +386,7 @@ struct OnboardingView: View {
         case .managedReady:
             return .clauxGreen
         case .managedNeedsRepair, .notInstalled, .customCommand:
-            return Color(nsColor: .systemOrange)
+            return .clauxOrange
         case .invalidSettings:
             return .clauxRed
         }

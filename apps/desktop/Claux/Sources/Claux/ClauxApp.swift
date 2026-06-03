@@ -28,6 +28,7 @@ struct ClauxApp: App {
             "autoRefreshInterval":  10,
             "costProjectionPeriod": "monthly",
             "appTheme":             "auto",
+            "stateColorPreset":     "system",
             "includeCacheCost":     true,
             "monthlyBudget":        0.0,
             "dailySummaryEnabled":  false,

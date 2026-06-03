@@ -67,8 +67,8 @@ struct SpendSummaryView: View {
                 )
                 .foregroundStyle(
                     Calendar.current.isDate(day.date, inSameDayAs: today)
-                        ? Color(nsColor: .systemBlue)
-                        : Color(nsColor: .systemBlue).opacity(0.28)
+                        ? Color.clauxBlue
+                        : Color.clauxBlue.opacity(0.28)
                 )
                 .cornerRadius(2)
             }
@@ -88,7 +88,7 @@ struct SpendSummaryView: View {
     private var budgetRow: some View {
         let fraction  = min(1.0, summary.thisMonth / monthlyBudget)
         let barColor: Color = fraction < 0.70 ? .clauxGreen
-                            : fraction < 0.90 ? .clauxYellow
+                            : fraction < 0.90 ? .clauxOrange
                             :                   .clauxRed
         let remaining = max(0.0, monthlyBudget - summary.thisMonth)
 
@@ -105,7 +105,7 @@ struct SpendSummaryView: View {
                 } else {
                     Text("Over budget")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .foregroundStyle(Color.clauxRed)
                 }
             }
 
@@ -141,8 +141,8 @@ private struct SpendCell: View {
         guard abs(f) >= 0.05 else { return nil }
         let pct = Int((abs(f) * 100).rounded())
         return f > 0
-            ? ("↑", Color(nsColor: .systemOrange), "\(pct)%")
-            : ("↓", Color(nsColor: .systemGreen),  "\(pct)%")
+            ? ("↑", Color.positiveTrend(true), "\(pct)%")
+            : ("↓", Color.positiveTrend(false),  "\(pct)%")
     }
 
     var body: some View {

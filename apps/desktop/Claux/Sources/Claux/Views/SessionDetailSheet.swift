@@ -50,21 +50,21 @@ struct SessionDetailSheet: View {
                             if let mode = quality.permissionModeLabel {
                                 Text(mode)
                                     .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(Color(nsColor: .systemBlue))
+                                    .foregroundStyle(Color.clauxBlue)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color(nsColor: .systemBlue).opacity(0.12))
+                                    .background(Color.clauxBlue.opacity(0.12))
                                     .clipShape(Capsule())
                             }
 
                             if session.isActive {
                                 HStack(spacing: 4) {
                                     Circle()
-                                        .fill(Color(nsColor: .systemGreen))
+                                        .fill(Color.clauxGreen)
                                         .frame(width: 5, height: 5)
                                     Text("Active")
                                         .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(Color(nsColor: .systemGreen))
+                                        .foregroundStyle(Color.clauxGreen)
                                 }
                             }
                         }
@@ -99,8 +99,8 @@ struct SessionDetailSheet: View {
 
                     tokenRow(label: "Input", count: session.tokenUsage.inputTokens, color: Color(nsColor: .labelColor))
                     tokenRow(label: "Output", count: session.tokenUsage.outputTokens, color: Color(nsColor: .secondaryLabelColor))
-                    tokenRow(label: "Cache read", count: session.tokenUsage.cacheReadTokens, color: Color(nsColor: .systemBlue))
-                    tokenRow(label: "Cache write", count: session.tokenUsage.cacheWriteTokens, color: Color(nsColor: .systemGreen))
+                    tokenRow(label: "Cache read", count: session.tokenUsage.cacheReadTokens, color: Color.clauxBlue)
+                    tokenRow(label: "Cache write", count: session.tokenUsage.cacheWriteTokens, color: Color.clauxGreen)
 
                     if session.tokenUsage.thinkingTokens > 0 {
                         tokenRow(label: "Thinking", count: session.tokenUsage.thinkingTokens, color: Color(nsColor: .systemPurple))
@@ -164,7 +164,7 @@ struct SessionDetailSheet: View {
                             if quality.failedAgents > 0 {
                                 Text("· \(quality.failedAgents) failed")
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color(nsColor: .systemRed))
+                                    .foregroundStyle(Color.clauxRed)
                             }
                         }
                     }
@@ -213,7 +213,7 @@ struct SessionDetailSheet: View {
                         Label(pathCopied ? "Copied!" : "Copy path",
                               systemImage: pathCopied ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 11))
-                            .foregroundStyle(pathCopied ? Color(nsColor: .systemGreen) : Color(nsColor: .systemBlue))
+                            .foregroundStyle(pathCopied ? Color.clauxGreen : Color.clauxBlue)
                     }
                     .buttonStyle(.plain)
                 }
@@ -228,13 +228,13 @@ struct SessionDetailSheet: View {
     private var qualityColor: Color {
         switch quality.score {
         case 85...:
-            return Color(nsColor: .systemGreen)
+            return Color.clauxGreen
         case 70...:
-            return Color(nsColor: .systemBlue)
+            return Color.clauxBlue
         case 50...:
-            return Color(nsColor: .systemYellow)
+            return Color.clauxOrange
         default:
-            return Color(nsColor: .systemRed)
+            return Color.clauxRed
         }
     }
 

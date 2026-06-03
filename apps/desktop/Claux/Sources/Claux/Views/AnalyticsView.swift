@@ -3,6 +3,7 @@ import Charts
 
 struct AnalyticsView: View {
     @EnvironmentObject var store: AppStore
+    @AppStorage("stateColorPreset") private var stateColorPreset: String = StateColorPreset.system.rawValue
     @State private var chartRange: ChartRange = .sevenDays
     @State private var selectedDay: DailySpend?
     /// Raw cursor X position within the full chart frame (used to position the tooltip).
@@ -29,6 +30,7 @@ struct AnalyticsView: View {
         .frame(width: 540, height: 640)
         .nativeBlurBackground(material: .sidebar)
         .navigationTitle("Analytics")
+        .id(stateColorPreset)
     }
 
     // MARK: – Daily spend chart
@@ -180,11 +182,11 @@ struct AnalyticsView: View {
     }
 
     private func barColor(for cost: Double) -> Color {
-        guard maxCost > 0 else { return Color(nsColor: .systemBlue) }
+        guard maxCost > 0 else { return Color.clauxBlue }
         let fraction = cost / maxCost
-        if fraction < 0.5 { return Color(nsColor: .systemBlue) }
-        if fraction < 0.8 { return Color(nsColor: .systemOrange) }
-        return Color(nsColor: .systemRed)
+        if fraction < 0.5 { return Color.clauxBlue }
+        if fraction < 0.8 { return Color.clauxOrange }
+        return Color.clauxRed
     }
 
     // MARK: – Project breakdown
@@ -214,7 +216,7 @@ struct AnalyticsView: View {
                                     RoundedRectangle(cornerRadius: 3)
                                         .fill(Color(nsColor: .separatorColor).opacity(0.3))
                                     RoundedRectangle(cornerRadius: 3)
-                                        .fill(Color(nsColor: .systemBlue).opacity(0.7))
+                                        .fill(Color.clauxBlue.opacity(0.7))
                                         .frame(width: max(4, geo.size.width * (proj.totalCost / maxCostP)))
                                 }
                             }
@@ -305,6 +307,7 @@ struct AnalyticsView: View {
 
 struct CompactAnalyticsView: View {
     @EnvironmentObject var store: AppStore
+    @AppStorage("stateColorPreset") private var stateColorPreset: String = StateColorPreset.system.rawValue
     @State private var chartRange: AnalyticsView.ChartRange = .sevenDays
     @State private var selectedDay: DailySpend?
     @State private var hoverX: CGFloat = 0
@@ -317,6 +320,7 @@ struct CompactAnalyticsView: View {
             Divider()
             modelSection
         }
+        .id(stateColorPreset)
     }
 
     // MARK: – Chart
@@ -444,11 +448,11 @@ struct CompactAnalyticsView: View {
     }
 
     private func barColor(for cost: Double) -> Color {
-        guard maxCost > 0 else { return Color(nsColor: .systemBlue) }
+        guard maxCost > 0 else { return Color.clauxBlue }
         let fraction = cost / maxCost
-        if fraction < 0.5 { return Color(nsColor: .systemBlue) }
-        if fraction < 0.8 { return Color(nsColor: .systemOrange) }
-        return Color(nsColor: .systemRed)
+        if fraction < 0.5 { return Color.clauxBlue }
+        if fraction < 0.8 { return Color.clauxOrange }
+        return Color.clauxRed
     }
 
     // MARK: – Project breakdown (2-row compact layout)
@@ -483,7 +487,7 @@ struct CompactAnalyticsView: View {
                                         RoundedRectangle(cornerRadius: 2)
                                             .fill(Color(nsColor: .separatorColor).opacity(0.3))
                                         RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color(nsColor: .systemBlue).opacity(0.7))
+                                            .fill(Color.clauxBlue.opacity(0.7))
                                             .frame(width: max(4, geo.size.width * (proj.totalCost / maxCostP)))
                                     }
                                 }

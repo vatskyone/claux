@@ -33,6 +33,7 @@ struct SettingsView: View {
 
     // ── Appearance ───────────────────────────────────────────────────────────
     @AppStorage("appTheme")               private var appTheme:            String = "auto"
+    @AppStorage("stateColorPreset")       private var stateColorPreset:    String = StateColorPreset.system.rawValue
 
     // ── General ─────────────────────────────────────────────────────────────
     @AppStorage("launchAtLogin")          private var launchAtLogin:       Bool   = false
@@ -138,6 +139,23 @@ struct SettingsView: View {
                 }
                 .help("Choose Light, Dark, or Auto (follows macOS system appearance)")
 
+                Picker("State colors", selection: $stateColorPreset) {
+                    ForEach(StateColorPreset.allCases) { preset in
+                        Text(preset.label).tag(preset.rawValue)
+                    }
+                }
+                .help("Choose the color palette used for state badges, warnings, progress bars, and session stats. Accessibility-focused options include High Contrast and Colorblind Safe.")
+
+                LabeledContent("Palette preview") {
+                    HStack(spacing: 8) {
+                        paletteSwatch("Blue", color: .clauxBlue)
+                        paletteSwatch("Green", color: .clauxGreen)
+                        paletteSwatch("Orange", color: .clauxOrange)
+                        paletteSwatch("Red", color: .clauxRed)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+
             } header: {
                 Label("General", systemImage: "gearshape")
             }
@@ -153,11 +171,11 @@ struct SettingsView: View {
                         switch notifManager.authStatus {
                         case .authorized, .provisional:
                             Label("Enabled", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(Color(nsColor: .systemGreen))
+                                .foregroundStyle(Color.clauxGreen)
                                 .font(.system(size: 12))
                         case .denied:
                             Label("Denied", systemImage: "xmark.circle.fill")
-                                .foregroundStyle(Color(nsColor: .systemRed))
+                                .foregroundStyle(Color.clauxRed)
                                 .font(.system(size: 12))
                             Button("Open System Settings") {
                                 NotificationManager.shared.requestPermission(openSettingsIfDenied: true)
@@ -257,9 +275,9 @@ struct SettingsView: View {
                         Button("Change…") { chooseDirectory() }
                             .controlSize(.small)
                         if watchDirectory != "~/.claude" {
-                            Button("Reset") { watchDirectory = "~/.claude" }
-                                .controlSize(.small)
-                                .foregroundStyle(Color(nsColor: .systemOrange))
+                                Button("Reset") { watchDirectory = "~/.claude" }
+                                    .controlSize(.small)
+                                    .foregroundStyle(Color.clauxOrange)
                         }
                     }
                 }
@@ -340,7 +358,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                             Text("Upgrade")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color(nsColor: .systemBlue))
+                                .foregroundStyle(Color.clauxBlue)
                                 .onTapGesture {
                                     NSWorkspace.shared.open(URL(string: "https://claux.app/upgrade")!)
                                 }
@@ -453,6 +471,7 @@ struct SettingsView: View {
         .frame(width: 460, height: 620)
         .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
         .background(WindowFloater())
+        .id(stateColorPreset)
         .onAppear {
             notifManager.refreshAuthStatus()
             statusLineManager.refresh()
@@ -565,9 +584,20 @@ struct SettingsView: View {
         case .managedReady:
             return .clauxGreen
         case .managedNeedsRepair, .notInstalled, .customCommand:
-            return Color(nsColor: .systemOrange)
+            return .clauxOrange
         case .invalidSettings:
             return .clauxRed
+        }
+    }
+
+    private func paletteSwatch(_ name: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color)
+                .frame(width: 22, height: 12)
+            Text(name)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -584,7 +614,7 @@ private struct SignInSheet: View {
         VStack(spacing: 20) {
             Image(systemName: "person.circle.fill")
                 .font(.system(size: 44))
-                .foregroundStyle(Color(nsColor: .systemBlue))
+                .foregroundStyle(Color.clauxBlue)
 
             Text("Sign in to Claux")
                 .font(.system(size: 18, weight: .semibold))
@@ -603,7 +633,7 @@ private struct SignInSheet: View {
                 if let err = errorMessage {
                     Text(err)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .foregroundStyle(Color.clauxRed)
                         .frame(width: 280, alignment: .leading)
                 }
             }

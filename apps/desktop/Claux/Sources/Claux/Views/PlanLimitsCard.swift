@@ -36,7 +36,7 @@ struct PlanLimitsCard: View {
                 if snapshot.hasAnyData && diagnostics.state == .staleData {
                     Text("stale")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .foregroundStyle(Color.clauxOrange)
                 }
             }
             .padding(.horizontal, 2)
@@ -154,11 +154,11 @@ struct PlanLimitsCard: View {
     private var missingStateColor: Color {
         switch diagnostics.state {
         case .statusLineNotRunning, .statusLineInvalidData:
-            return Color(nsColor: .systemRed)
+            return Color.clauxRed
         case .limitsUnavailableForSession, .staleData, .statusLinePendingActivation,
              .statusLineNotConfigured, .statusLineManagedElsewhere,
              .statusLineNeedsRepair:
-            return Color(nsColor: .systemOrange)
+            return Color.clauxOrange
         case .waitingForFirstResponse, .ready:
             return Color(nsColor: .tertiaryLabelColor)
         }
@@ -230,9 +230,7 @@ struct PlanLimitsCard: View {
     }
 
     private func progressColor(_ fraction: Double) -> Color {
-        if fraction < 0.70 { return Color(nsColor: .systemBlue) }
-        if fraction < 0.90 { return Color(nsColor: .systemYellow) }
-        return Color(nsColor: .systemRed)
+        Color.usageRamp(fraction)
     }
 
     private func relativeResetTime(until date: Date) -> String {

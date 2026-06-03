@@ -19,6 +19,7 @@ struct PopoverView: View {
     @State private var activeTab: PopoverTab = .dashboard
 
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
+    @AppStorage("stateColorPreset") private var stateColorPreset: String = StateColorPreset.system.rawValue
 
     // Fixed content-area height — keeps the popover the same size on every tab.
     private let tabHeight: CGFloat = 340
@@ -61,6 +62,7 @@ struct PopoverView: View {
         }
         .frame(width: 340)
         .nativeBlurBackground(material: .menu)
+        .id(stateColorPreset)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             store.refreshNow()
         }
@@ -132,7 +134,7 @@ struct PopoverView: View {
                         Text("Open full Analytics window")
                             .font(.system(size: 11))
                     }
-                    .foregroundStyle(Color(nsColor: .systemBlue))
+                    .foregroundStyle(Color.clauxBlue)
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
@@ -163,7 +165,7 @@ struct PopoverView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
                         store.activeSession != nil
-                            ? Color(nsColor: .systemBlue)
+                            ? Color.clauxBlue
                             : Color(nsColor: .secondaryLabelColor)
                     )
             }
@@ -430,7 +432,7 @@ struct ActiveDot: View {
         ZStack {
             if isActive {
                 Circle()
-                    .fill(Color(nsColor: .systemBlue).opacity(0.35))
+                    .fill(Color.clauxBlue.opacity(0.35))
                     .frame(width: 12, height: 12)
                     .scaleEffect(pulse ? 2.2 : 1.0)
                     .opacity(pulse ? 0 : 1)
@@ -440,7 +442,7 @@ struct ActiveDot: View {
                     )
             }
             Circle()
-                .fill(isActive ? Color(nsColor: .systemBlue) : Color(nsColor: .tertiaryLabelColor))
+                .fill(isActive ? Color.clauxBlue : Color(nsColor: .tertiaryLabelColor))
                 .frame(width: 7, height: 7)
         }
         .onAppear { pulse = true }

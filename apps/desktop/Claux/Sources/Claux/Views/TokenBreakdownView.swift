@@ -24,7 +24,7 @@ struct TokenBreakdownView: View {
                     label: "Cache Read",
                     count: usage.cacheReadTokens,
                     // Blue tint for cache = efficient, matches accent
-                    color: Color(nsColor: .systemBlue)
+                    color: Color.clauxBlue
                 )
                 TokenCell(
                     label: "Output",
@@ -34,7 +34,7 @@ struct TokenBreakdownView: View {
                 TokenCell(
                     label: "Cache Write",
                     count: usage.cacheWriteTokens,
-                    color: Color(nsColor: .systemGreen)
+                    color: Color.clauxGreen
                 )
             }
 
@@ -42,11 +42,11 @@ struct TokenBreakdownView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "brain")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .systemBlue))
+                        .foregroundStyle(Color.clauxBlue)
 
                     Text("Thinking: \(Format.tokens(usage.thinkingTokens))")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .systemBlue))
+                        .foregroundStyle(Color.clauxBlue)
                 }
                 .padding(.top, 2)
             }

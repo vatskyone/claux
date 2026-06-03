@@ -6,9 +6,7 @@ struct ContextHealthBar: View {
     let fraction: Double   // 0.0 – 1.0
 
     private var barColor: Color {
-        if fraction < 0.70 { return Color(nsColor: .systemBlue) }
-        if fraction < 0.90 { return Color(nsColor: .systemYellow) }
-        return Color(nsColor: .systemRed)
+        Color.contextHealthColor(fraction)
     }
 
     private var statusLabel: String {
