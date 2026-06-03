@@ -2,6 +2,28 @@
 
 ---
 
+## [1.13.2] — 2026-06-03
+
+### Improvements
+- **Updated branded app icon** (`Sources/Claux/Resources/app-icon.png`) — refreshed the bundled Claux app icon with the latest rounded-corner artwork and color treatment so the installed app and DMG present the final branding consistently.
+
+## [1.13.1] — 2026-06-03
+
+### New Features
+- **Custom app icon packaging** (`build_app.sh`, `Sources/Claux/Resources/app-icon.png`) — the macOS app bundle now generates and embeds a proper `.icns` file from the shipped source icon so `Claux.app` and DMG installs display the branded app icon in Finder, Launchpad, and Applications.
+
+### Bug Fixes
+- **Bundle icon metadata compatibility** (`build_app.sh`) — switched the app bundle plist to reference the icon by basename (`Claux`) instead of the full filename so Finder correctly resolves the bundled `.icns` during install and DMG mounting.
+
+## [1.13.0] — 2026-06-03
+
+### New Features
+- **Drag-and-drop DMG packaging** (`build_dmg.sh`) — added a dedicated macOS DMG build script that packages `Claux.app` alongside an `Applications` shortcut so users can install the app with the standard drag-and-drop flow.
+
+### Improvements
+- **Ad-hoc app signing in bundle build** (`build_app.sh`) — the app bundle build now runs `codesign --sign -` so local `.app` and DMG artifacts match the documented packaging flow more closely.
+- **Install/build docs updated** (`README.md`) — added DMG build instructions and documented the output location in `apps/desktop/Claux/dist/`.
+
 ## [1.12.0] — 2026-06-03
 
 ### New Features

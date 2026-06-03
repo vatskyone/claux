@@ -181,11 +181,15 @@ cd claux/apps/desktop/Claux
 # Build the .app bundle and launch it (required for notifications + login items)
 bash build_app.sh run
 
+# Build a drag-and-drop DMG installer
+bash build_dmg.sh
+
 # Build only (fast compile check — no bundle, notifications disabled)
 swift build
 ```
 
 `build_app.sh run` produces `Claux.app`, signs it ad-hoc, and opens it. The menu bar icon appears immediately.
+`build_dmg.sh` produces a drag-and-drop installer DMG in `apps/desktop/Claux/dist/`.
 
 ### How it works after launch
 
@@ -301,6 +305,7 @@ claux/
 │           ├── Sources/Claux/      # All Swift source files
 │           ├── Package.swift
 │           ├── build_app.sh        # Build + launch script
+│           ├── build_dmg.sh        # Build drag-and-drop DMG installer
 │           ├── CLAUDE.md           # AI coding guidelines (read by Claude Code)
 │           └── CHANGELOG.md        # Full version history
 ├── docs/                           # Product and engineering docs
