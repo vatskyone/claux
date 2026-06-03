@@ -2,6 +2,11 @@
 
 ---
 
+## [1.13.3] — 2026-06-03
+
+### Improvements
+- **Refined app icon artwork** (`Sources/Claux/Resources/app-icon.png`) — updated the bundled Claux icon asset with the latest user-provided artwork so newly built app bundles use the revised branding in Finder, Applications, and DMG installs.
+
 ## [1.13.2] — 2026-06-03
 
 ### Improvements
