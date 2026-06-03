@@ -29,6 +29,7 @@ struct SettingsView: View {
 
     @EnvironmentObject var store: AppStore
     @ObservedObject private var notifManager = NotificationManager.shared
+    @ObservedObject private var statusLineManager = ClaudeStatusLineManager.shared
 
     // ── Appearance ───────────────────────────────────────────────────────────
     @AppStorage("appTheme")               private var appTheme:            String = "auto"
@@ -263,6 +264,40 @@ struct SettingsView: View {
                     }
                 }
 
+                LabeledContent("Claude integration") {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(integrationSummary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(integrationSummaryColor)
+                            .multilineTextAlignment(.trailing)
+
+                        HStack(spacing: 8) {
+                            Button(integrationActionTitle) {
+                                if statusLineManager.installOrRepair() {
+                                    store.refreshNow()
+                                }
+                            }
+                            .controlSize(.small)
+
+                            if case .managedReady = statusLineManager.inspection.state {
+                                Button("Refresh") {
+                                    statusLineManager.refresh()
+                                    store.refreshNow()
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+
+                        if let lastOperationMessage = statusLineManager.lastOperationMessage {
+                            Text(lastOperationMessage)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                }
+                .help("Installs a Claux-managed Claude statusLine wrapper. Existing custom statusLine commands are preserved and wrapped.")
+
                 Toggle("Include prompt-cache cost", isOn: $includeCacheCost)
                     .help("Count cache-read and cache-write tokens in session cost totals")
 
@@ -418,7 +453,10 @@ struct SettingsView: View {
         .frame(width: 460, height: 620)
         .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
         .background(WindowFloater())
-        .onAppear { notifManager.refreshAuthStatus() }
+        .onAppear {
+            notifManager.refreshAuthStatus()
+            statusLineManager.refresh()
+        }
 
         // ── Reset confirmation ────────────────────────────────────────────────
         .confirmationDialog(
@@ -489,6 +527,47 @@ struct SettingsView: View {
         panel.prompt = "Select"
         if panel.runModal() == .OK, let url = panel.url {
             watchDirectory = url.path
+        }
+    }
+
+    private var integrationActionTitle: String {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return "Reinstall"
+        case .managedNeedsRepair:
+            return "Repair"
+        case .notInstalled:
+            return "Install"
+        case .customCommand:
+            return "Wrap Existing"
+        case .invalidSettings:
+            return "Retry Install"
+        }
+    }
+
+    private var integrationSummary: String {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return "Managed by Claux"
+        case .managedNeedsRepair:
+            return "Managed install incomplete"
+        case .notInstalled:
+            return "Not installed"
+        case .customCommand:
+            return "Custom command detected"
+        case .invalidSettings:
+            return "settings.json unreadable"
+        }
+    }
+
+    private var integrationSummaryColor: Color {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return .clauxGreen
+        case .managedNeedsRepair, .notInstalled, .customCommand:
+            return Color(nsColor: .systemOrange)
+        case .invalidSettings:
+            return .clauxRed
         }
     }
 }

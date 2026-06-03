@@ -6,7 +6,9 @@ import AppKit
 /// Covers the entire popover and fades out when the user taps "All Done".
 struct OnboardingView: View {
 
+    @EnvironmentObject var store: AppStore
     @ObservedObject private var notifManager = NotificationManager.shared
+    @ObservedObject private var statusLineManager = ClaudeStatusLineManager.shared
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
     @AppStorage("monitoredDirectory")  private var watchDirectory:      String = "~/.claude"
 
@@ -18,7 +20,7 @@ struct OnboardingView: View {
             // ── Step progress indicator ───────────────────────────────────────
             // Active step → wide capsule in accent blue; others → small dots.
             HStack(spacing: 7) {
-                ForEach(0..<3) { i in
+                ForEach(0..<4) { i in
                     Capsule()
                         .fill(i == step
                               ? Color.clauxAccent
@@ -39,7 +41,8 @@ struct OnboardingView: View {
                 switch step {
                 case 0: welcomeStep
                 case 1: pathStep
-                case 2: notifStep
+                case 2: integrationStep
+                case 3: notifStep
                 default: EmptyView()
                 }
             }
@@ -161,6 +164,69 @@ struct OnboardingView: View {
 
     // MARK: – Step 3: Notifications
 
+    private var integrationStep: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.clauxAccent.opacity(0.10))
+                    .frame(width: 76, height: 76)
+                Image(systemName: "link.badge.plus")
+                    .font(.system(size: 38))
+                    .foregroundStyle(Color.clauxAccent)
+            }
+
+            Text("Claude Integration")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Color(nsColor: .labelColor))
+
+            Text("Claux installs a managed statusLine wrapper so plan limits work automatically. Existing custom statusLine commands are preserved and wrapped.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 28)
+
+            Label(integrationStatusTitle, systemImage: integrationStatusIcon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(integrationStatusColor)
+                .padding(.top, 2)
+
+            Text(statusLineManager.inspection.message)
+                .font(.system(size: 11))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            if case let .customCommand(command) = statusLineManager.inspection.state {
+                Text(command)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal, 24)
+            }
+
+            if let lastOperationMessage = statusLineManager.lastOperationMessage {
+                Text(lastOperationMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .padding(.top, 4)
+        .onAppear { statusLineManager.refresh() }
+    }
+
     private var notifStep: some View {
         VStack(spacing: 14) {
             ZStack {
@@ -239,12 +305,33 @@ struct OnboardingView: View {
         switch step {
         case 0: return "Get Started"
         case 1: return "Looks Good"
+        case 2:
+            switch statusLineManager.inspection.state {
+            case .managedReady:
+                return "Continue"
+            case .managedNeedsRepair:
+                return "Repair Integration"
+            case .customCommand:
+                return "Wrap Existing Command"
+            case .notInstalled, .invalidSettings:
+                return "Install Integration"
+            }
         default: return "All Done"
         }
     }
 
     private func advance() {
-        if step < 2 {
+        if step == 2 {
+            switch statusLineManager.inspection.state {
+            case .managedReady:
+                withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
+            default:
+                if statusLineManager.installOrRepair() {
+                    store.refreshNow()
+                    withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
+                }
+            }
+        } else if step < 3 {
             withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
         } else {
             withAnimation(.easeOut(duration: 0.3)) { onboardingCompleted = true }
@@ -259,6 +346,47 @@ struct OnboardingView: View {
         panel.prompt                  = "Select"
         if panel.runModal() == .OK, let url = panel.url {
             watchDirectory = url.path
+        }
+    }
+
+    private var integrationStatusTitle: String {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return "Integration ready"
+        case .managedNeedsRepair:
+            return "Needs repair"
+        case .notInstalled:
+            return "Not installed"
+        case .customCommand:
+            return "Custom command will be wrapped"
+        case .invalidSettings:
+            return "Settings file needs attention"
+        }
+    }
+
+    private var integrationStatusIcon: String {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return "checkmark.circle.fill"
+        case .managedNeedsRepair:
+            return "wrench.and.screwdriver"
+        case .notInstalled:
+            return "square.and.arrow.down"
+        case .customCommand:
+            return "arrow.triangle.branch"
+        case .invalidSettings:
+            return "exclamationmark.triangle"
+        }
+    }
+
+    private var integrationStatusColor: Color {
+        switch statusLineManager.inspection.state {
+        case .managedReady:
+            return .clauxGreen
+        case .managedNeedsRepair, .notInstalled, .customCommand:
+            return Color(nsColor: .systemOrange)
+        case .invalidSettings:
+            return .clauxRed
         }
     }
 }

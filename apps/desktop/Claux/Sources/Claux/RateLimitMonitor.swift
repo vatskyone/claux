@@ -175,6 +175,33 @@ final class RateLimitMonitor: ObservableObject {
     }
 
     private func diagnosticsWithoutSnapshot() -> PlanLimitsDiagnostics {
+        let integration = ClaudeStatusLineManager.inspect(monitoredDirectory: monitoredDirectory)
+        switch integration.state {
+        case .notInstalled:
+            return PlanLimitsDiagnostics(
+                state: .statusLineNotConfigured,
+                message: integration.message
+            )
+        case .customCommand:
+            return PlanLimitsDiagnostics(
+                state: .statusLineManagedElsewhere,
+                message: integration.message
+            )
+        case .managedNeedsRepair, .invalidSettings:
+            return PlanLimitsDiagnostics(
+                state: .statusLineNeedsRepair,
+                message: integration.message
+            )
+        case .managedReady:
+            if !FileManager.default.fileExists(atPath: debugLogURL.path) {
+                return PlanLimitsDiagnostics(
+                    state: .statusLinePendingActivation,
+                    message: "Claude integration is installed. Restart Claude Code, accept the statusLine trust prompt, then send one message."
+                )
+            }
+            break
+        }
+
         guard let last = readLastDebugEntry() else {
             return PlanLimitsDiagnostics(
                 state: .statusLineNotRunning,
@@ -193,6 +220,13 @@ final class RateLimitMonitor: ObservableObject {
             return PlanLimitsDiagnostics(
                 state: .waitingForFirstResponse,
                 message: "Waiting for first API response in the current session…"
+            )
+        }
+
+        if last.isRecent(seconds: 120), last.kind == .invalidJSON {
+            return PlanLimitsDiagnostics(
+                state: .statusLineInvalidData,
+                message: "StatusLine returned invalid JSON. Repair Claux integration or inspect the wrapped custom command."
             )
         }
 

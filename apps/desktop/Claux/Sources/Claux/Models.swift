@@ -247,7 +247,12 @@ enum PlanLimitSourceState {
     case ready
     case waitingForFirstResponse
     case limitsUnavailableForSession
+    case statusLinePendingActivation
+    case statusLineNotConfigured
+    case statusLineManagedElsewhere
+    case statusLineNeedsRepair
     case statusLineNotRunning
+    case statusLineInvalidData
     case staleData
 }
 
@@ -256,7 +261,7 @@ struct PlanLimitsDiagnostics {
     var message: String
 
     static let defaultState = PlanLimitsDiagnostics(
-        state: .statusLineNotRunning,
-        message: "Waiting for statusLine source…"
+        state: .statusLineNotConfigured,
+        message: "Install Claude integration to enable plan limits."
     )
 }

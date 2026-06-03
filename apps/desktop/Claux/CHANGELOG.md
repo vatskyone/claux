@@ -2,6 +2,34 @@
 
 ---
 
+## [1.10.9] — 2026-06-03
+
+### Bug Fixes
+- **First-launch onboarding now appears from the menu bar popover** (`ClauxApp.swift`) — launching Claux no longer auto-opens the Settings window on fresh install. The app now stays menu-bar-first and automatically presents the popover onboarding when setup has not been completed.
+
+## [1.10.8] — 2026-06-03
+
+### Improvements
+- **Fresh-install activation guidance** (`RateLimitMonitor.swift`, `Models.swift`, `Views/PlanLimitsCard.swift`) — when Claude integration is installed but has never been invoked yet, the Dashboard now tells users to restart Claude Code, accept the trust prompt, and send one message instead of showing the generic `statusLine source not running` state.
+
+## [1.10.7] — 2026-06-03
+
+### Bug Fixes
+- **Bundled statusline wrapper lookup fixed** (`ClaudeStatusLineManager.swift`) — the Claude integration installer now loads `statusline_wrapper.py` from the SwiftPM resource bundle (`Bundle.module`) instead of only checking `Bundle.main`, fixing the “Bundled statusline wrapper is missing from the app.” error in the packaged app.
+
+## [1.10.6] — 2026-06-03
+
+### New Features
+- **Managed Claude statusLine installer** (`ClaudeStatusLineManager.swift`, `Resources/statusline_wrapper.py`) — Claux can now install and repair its own Claude `statusLine` integration, writing a managed wrapper that collects plan limits while preserving any existing custom command.
+- **Onboarding integration step** (`Views/OnboardingView.swift`) — first-run onboarding now includes a dedicated Claude integration step so new users can enable plan-limit collection in one flow instead of editing `~/.claude/settings.json` manually.
+
+### Improvements
+- **Settings repair controls** (`Views/SettingsView.swift`) — added install/repair controls and live integration status in Settings so existing users can migrate or recover the Claude integration without manual file edits.
+- **Plan-limit diagnostics for unmanaged setups** (`Models.swift`, `RateLimitMonitor.swift`, `Views/PlanLimitsCard.swift`) — the Dashboard now distinguishes between missing integration, custom unmanaged statusLine commands, broken managed installs, invalid statusLine JSON, and runtime inactivity.
+
+### Bug Fixes
+- **Onboarding no longer auto-skips integration** (`Views/PopoverView.swift`) — removed the old popover heuristic that could dismiss onboarding before the new integration step had a chance to run.
+
 ## [1.10.5] — 2026-06-02
 
 ### Improvements

@@ -43,21 +43,9 @@ struct ClauxApp: App {
     var body: some Scene {
         let _ = appDelegate.configureIfNeeded(store: store)
 
-        WindowGroup("Settings", id: "settings") {
-            SettingsView()
-                .environmentObject(store)
-                .appThemed()
+        Settings {
+            EmptyView()
         }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-
-        WindowGroup("Analytics", id: "analytics") {
-            AnalyticsView()
-                .environmentObject(store)
-                .appThemed()
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
     }
 }
 
@@ -89,6 +77,7 @@ final class ClauxStatusItemController: NSObject {
         configurePanel()
         configureObservers()
         updateVisibilityAndAppearance()
+        presentOnboardingIfNeeded()
         clauxOpenWindow = { [weak self] id in
             self?.openWindow(id: id)
         }
@@ -181,6 +170,14 @@ final class ClauxStatusItemController: NSObject {
         }
     }
 
+    private func presentOnboardingIfNeeded() {
+        let onboardingCompleted = UserDefaults.standard.bool(forKey: "onboardingCompleted")
+        guard !onboardingCompleted else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.showPanelForOnboarding()
+        }
+    }
+
     private func ensureStatusItem() {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -253,6 +250,13 @@ final class ClauxStatusItemController: NSObject {
 
     private func closePanel() {
         panel?.orderOut(nil)
+    }
+
+    private func showPanelForOnboarding() {
+        guard let panel, !panel.isVisible, let button = statusItem?.button else { return }
+        alignPanelToMenuBar(from: button)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     private func alignPanelToMenuBar(from button: NSStatusBarButton) {

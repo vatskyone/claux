@@ -107,8 +107,18 @@ struct PlanLimitsCard: View {
             return "Waiting for first API response"
         case .limitsUnavailableForSession:
             return "Plan limits unavailable in this session"
+        case .statusLinePendingActivation:
+            return "Restart Claude to activate plan limits"
+        case .statusLineNotConfigured:
+            return "Claude integration not installed"
+        case .statusLineManagedElsewhere:
+            return "Custom statusLine detected"
+        case .statusLineNeedsRepair:
+            return "Claude integration needs repair"
         case .statusLineNotRunning:
             return "statusLine source not running"
+        case .statusLineInvalidData:
+            return "statusLine sent invalid data"
         case .staleData:
             return "Plan-limit data is stale"
         case .ready:
@@ -122,8 +132,18 @@ struct PlanLimitsCard: View {
             return "hourglass"
         case .limitsUnavailableForSession:
             return "nosign"
+        case .statusLinePendingActivation:
+            return "arrow.triangle.2.circlepath"
+        case .statusLineNotConfigured:
+            return "square.and.arrow.down"
+        case .statusLineManagedElsewhere:
+            return "arrow.triangle.branch"
+        case .statusLineNeedsRepair:
+            return "wrench.and.screwdriver"
         case .statusLineNotRunning:
             return "bolt.slash.circle"
+        case .statusLineInvalidData:
+            return "exclamationmark.triangle"
         case .staleData:
             return "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .ready:
@@ -133,9 +153,11 @@ struct PlanLimitsCard: View {
 
     private var missingStateColor: Color {
         switch diagnostics.state {
-        case .statusLineNotRunning:
+        case .statusLineNotRunning, .statusLineInvalidData:
             return Color(nsColor: .systemRed)
-        case .limitsUnavailableForSession, .staleData:
+        case .limitsUnavailableForSession, .staleData, .statusLinePendingActivation,
+             .statusLineNotConfigured, .statusLineManagedElsewhere,
+             .statusLineNeedsRepair:
             return Color(nsColor: .systemOrange)
         case .waitingForFirstResponse, .ready:
             return Color(nsColor: .tertiaryLabelColor)

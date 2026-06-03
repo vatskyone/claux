@@ -63,10 +63,6 @@ struct PopoverView: View {
         .nativeBlurBackground(material: .menu)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             store.refreshNow()
-            if !onboardingCompleted,
-               UserDefaults.standard.object(forKey: "autoRefreshInterval") != nil {
-                onboardingCompleted = true
-            }
         }
     }
 
