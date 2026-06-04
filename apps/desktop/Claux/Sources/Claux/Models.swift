@@ -64,6 +64,10 @@ struct SessionQualityMetrics {
         touchedFiles.count
     }
 
+    var errorCount: Int {
+        failedToolResults + failedAgents
+    }
+
     var scoreLabel: String {
         switch score {
         case 85...: return "Excellent"
@@ -163,6 +167,10 @@ struct ClaudeSession: Identifiable {
             return cleaned.isEmpty ? nil : cleaned.capitalized
         }
     }
+
+    var errorCount: Int {
+        qualityMetrics.errorCount
+    }
 }
 
 // MARK: – Spend totals
@@ -201,6 +209,27 @@ struct DailyRecapSession: Identifiable {
 
 struct DailyRecap {
     let day: Date
+    let totalCost: Double
+    let sessionCount: Int
+    let totalAcceptedEdits: Int
+    let totalRejectedActions: Int
+    let totalTouchedFileCount: Int
+    let topProjectDisplayPath: String?
+    let topProjectCost: Double
+    let topModelDisplayName: String?
+    let topModelCost: Double
+    let bestSession: DailyRecapSession?
+    let mostExpensiveSession: DailyRecapSession?
+    let sessions: [DailyRecapSession]
+
+    var hasSessions: Bool {
+        sessionCount > 0
+    }
+}
+
+struct WeeklyRecap {
+    let startDay: Date
+    let endDay: Date
     let totalCost: Double
     let sessionCount: Int
     let totalAcceptedEdits: Int

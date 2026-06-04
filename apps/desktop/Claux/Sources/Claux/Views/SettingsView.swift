@@ -51,8 +51,15 @@ struct SettingsView: View {
     @AppStorage("costAlertThreshold")     private var costThreshold:       Double = 5.0
     @AppStorage("contextHealthAlert")     private var contextAlert:        Double = 80.0
     @AppStorage("alertOnSessionEnd")      private var alertOnSessionEnd:   Bool   = false
+    @AppStorage("notificationVerbosity")  private var notificationVerbosity: String = NotificationVerbosity.standard.rawValue
+    @AppStorage("notificationsQuietHoursEnabled") private var quietHoursEnabled: Bool = false
+    @AppStorage("notificationsQuietHoursStart") private var quietHoursStart: Int = 22
+    @AppStorage("notificationsQuietHoursEnd") private var quietHoursEnd: Int = 8
     @AppStorage("dailySummaryEnabled")    private var dailySummaryEnabled: Bool   = false
     @AppStorage("dailySummaryHour")       private var dailySummaryHour:    Int    = 18
+    @AppStorage("weeklyRecapEnabled")     private var weeklyRecapEnabled: Bool = false
+    @AppStorage("weeklyRecapWeekday")     private var weeklyRecapWeekday: Int = SummaryWeekday.monday.rawValue
+    @AppStorage("summaryWeekdaysOnly")    private var summaryWeekdaysOnly: Bool = false
     @AppStorage("claudemdAlertEnabled")   private var claudemdAlertEnabled: Bool  = true
     @AppStorage("claudemdThreshold")      private var claudemdThreshold:   Int    = 50
 
@@ -228,16 +235,61 @@ struct SettingsView: View {
                 Toggle("Notify when a session ends", isOn: $alertOnSessionEnd)
                     .disabled(!notificationsOn)
 
+                Picker("Notification detail", selection: $notificationVerbosity) {
+                    ForEach(NotificationVerbosity.allCases) { verbosity in
+                        Text(verbosity.label).tag(verbosity.rawValue)
+                    }
+                }
+                .help("Controls how much session and summary detail Claux includes in each notification.")
+                .disabled(!notificationsOn)
+
                 Toggle("Daily summary", isOn: $dailySummaryEnabled)
                     .disabled(!notificationsOn)
                     .help("Send a daily summary notification with today's total spend")
 
-                if dailySummaryEnabled {
+                Toggle("Weekly recap", isOn: $weeklyRecapEnabled)
+                    .disabled(!notificationsOn)
+                    .help("Send one recap notification for the last 7 completed days.")
+
+                Toggle("Weekday-only summaries", isOn: $summaryWeekdaysOnly)
+                    .disabled(!notificationsOn || (!dailySummaryEnabled && !weeklyRecapEnabled))
+                    .help("Skip summary notifications on weekends.")
+
+                if dailySummaryEnabled || weeklyRecapEnabled {
                     Picker("Send at", selection: $dailySummaryHour) {
                         Text("12:00 pm").tag(12)
                         Text("3:00 pm").tag(15)
                         Text("6:00 pm").tag(18)
                         Text("9:00 pm").tag(21)
+                    }
+                    .disabled(!notificationsOn)
+                }
+
+                if weeklyRecapEnabled {
+                    Picker("Weekly recap day", selection: $weeklyRecapWeekday) {
+                        ForEach(SummaryWeekday.allCases) { weekday in
+                            Text(weekday.label).tag(weekday.rawValue)
+                        }
+                    }
+                    .disabled(!notificationsOn)
+                }
+
+                Toggle("Quiet hours", isOn: $quietHoursEnabled)
+                    .disabled(!notificationsOn)
+                    .help("Suppress Claux notifications during a blocked time window.")
+
+                if quietHoursEnabled {
+                    Picker("Quiet hours start", selection: $quietHoursStart) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(hourLabel(hour)).tag(hour)
+                        }
+                    }
+                    .disabled(!notificationsOn)
+
+                    Picker("Quiet hours end", selection: $quietHoursEnd) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(hourLabel(hour)).tag(hour)
+                        }
                     }
                     .disabled(!notificationsOn)
                 }
@@ -599,6 +651,14 @@ struct SettingsView: View {
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:00 a"
+        let date = Calendar.current.date(from: DateComponents(hour: hour)) ?? Date()
+        return formatter.string(from: date).lowercased()
     }
 }
 

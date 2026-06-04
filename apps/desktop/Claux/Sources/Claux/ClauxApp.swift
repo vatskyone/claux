@@ -20,6 +20,10 @@ struct ClauxApp: App {
             "costAlertThreshold":   5.0,
             "contextHealthAlert":   80.0,
             "alertOnSessionEnd":    false,
+            "notificationVerbosity": "standard",
+            "notificationsQuietHoursEnabled": false,
+            "notificationsQuietHoursStart": 22,
+            "notificationsQuietHoursEnd": 8,
             "claudemdAlertEnabled": true,
             "claudemdThreshold":    50,
             "showCostInMenuBar":    false,
@@ -33,6 +37,9 @@ struct ClauxApp: App {
             "monthlyBudget":        0.0,
             "dailySummaryEnabled":  false,
             "dailySummaryHour":     18,
+            "weeklyRecapEnabled":   false,
+            "weeklyRecapWeekday":   2,
+            "summaryWeekdaysOnly":  false,
             "menuBarVisibility":    "always",
         ])
 
@@ -150,6 +157,20 @@ final class ClauxStatusItemController: NSObject {
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.showPanelForNotification()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .clauxOpenSession)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.showPanelForNotification()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .clauxOpenDashboard)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.showPanelForNotification()

@@ -2,8 +2,46 @@ import UserNotifications
 import Combine
 import AppKit
 
+enum NotificationVerbosity: String, CaseIterable, Identifiable {
+    case minimal
+    case standard
+    case detailed
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .minimal: return "Minimal"
+        case .standard: return "Standard"
+        case .detailed: return "Detailed"
+        }
+    }
+}
+
+enum SummaryWeekday: Int, CaseIterable, Identifiable {
+    case monday = 2
+    case tuesday = 3
+    case wednesday = 4
+    case thursday = 5
+    case friday = 6
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        }
+    }
+}
+
 extension Notification.Name {
     static let clauxOpenDailyRecap = Notification.Name("clauxOpenDailyRecap")
+    static let clauxOpenSession = Notification.Name("clauxOpenSession")
+    static let clauxOpenDashboard = Notification.Name("clauxOpenDashboard")
 }
 
 // MARK: – NotificationManager
@@ -13,10 +51,24 @@ final class NotificationManager: NSObject, ObservableObject {
     private enum NotificationPayloadKey {
         static let target = "clauxTarget"
         static let dayKey = "dayKey"
+        static let sessionID = "sessionID"
     }
 
     private enum NotificationTarget: String {
         case dailyRecap
+        case session
+        case dashboard
+    }
+
+    private enum NotificationCategoryIdentifier: String {
+        case sessionAlert = "claux.session-alert"
+        case summaryAlert = "claux.summary-alert"
+    }
+
+    private enum NotificationActionIdentifier: String {
+        case openSession = "claux.open-session"
+        case openDashboard = "claux.open-dashboard"
+        case snoozeToday = "claux.snooze-today"
     }
 
     static let shared = NotificationManager()
@@ -47,8 +99,39 @@ final class NotificationManager: NSObject, ObservableObject {
         super.init()
         guard notificationsAvailable else { return }
         UNUserNotificationCenter.current().delegate = self
+        registerCategories()
         // Populate authStatus on startup
         refreshAuthStatus()
+    }
+
+    private func registerCategories() {
+        let openSession = UNNotificationAction(
+            identifier: NotificationActionIdentifier.openSession.rawValue,
+            title: "Open Session"
+        )
+        let openDashboard = UNNotificationAction(
+            identifier: NotificationActionIdentifier.openDashboard.rawValue,
+            title: "Open Dashboard"
+        )
+        let snoozeToday = UNNotificationAction(
+            identifier: NotificationActionIdentifier.snoozeToday.rawValue,
+            title: "Snooze Today"
+        )
+
+        let sessionCategory = UNNotificationCategory(
+            identifier: NotificationCategoryIdentifier.sessionAlert.rawValue,
+            actions: [openSession, openDashboard, snoozeToday],
+            intentIdentifiers: [],
+            options: []
+        )
+        let summaryCategory = UNNotificationCategory(
+            identifier: NotificationCategoryIdentifier.summaryAlert.rawValue,
+            actions: [openDashboard, snoozeToday],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        UNUserNotificationCenter.current().setNotificationCategories([sessionCategory, summaryCategory])
     }
 
     /// Refresh the published `authStatus`. Call after any permission change.
@@ -179,11 +262,15 @@ final class NotificationManager: NSObject, ObservableObject {
         if (UserDefaults.standard.object(forKey: "alertOnSessionEnd") as? Bool) ?? false {
             for endedID in justEnded {
                 if let ended = recent.first(where: { $0.id == endedID }) {
+                    let quality = "\(ended.qualityMetrics.score) \(ended.qualityMetrics.scoreLabel.lowercased())"
                     fire(
                         id: "session-ended-\(endedID)",
                         title: "Session Ended",
-                        body: "\(ended.displayPath) finished · \(Format.cost(ended.totalCost)) · \(Format.duration(ended.duration))",
-                        symbol: "checkmark.circle"
+                        subtitle: "\(Format.cost(ended.totalCost)) · \(Format.duration(ended.duration)) · \(quality)",
+                        body: sessionEndedBody(for: ended),
+                        symbol: "checkmark.circle",
+                        category: .sessionAlert,
+                        userInfo: sessionUserInfo(for: ended)
                     )
                 }
             }
@@ -193,6 +280,7 @@ final class NotificationManager: NSObject, ObservableObject {
 
         // ── Daily summary ───────────────────────────────────────────────────
         checkDailySummary(store: store)
+        checkWeeklyRecap(store: store)
 
         // ── Reset dedup when a session is no longer tracked ──
         let allIDs = Set(([active].compactMap { $0 } + recent).map { $0.id })
@@ -209,6 +297,7 @@ final class NotificationManager: NSObject, ObservableObject {
     private func checkDailySummary(store: AppStore) {
         let enabled = (UserDefaults.standard.object(forKey: "dailySummaryEnabled") as? Bool) ?? false
         guard enabled, notificationsAvailable else { return }
+        guard summarySchedulingAllowedToday() else { return }
 
         let summaryHour = UserDefaults.standard.integer(forKey: "dailySummaryHour")
         let currentHour = Calendar.current.component(.hour, from: Date())
@@ -227,17 +316,7 @@ final class NotificationManager: NSObject, ObservableObject {
         let body: String
 
         if let recap, recap.hasSessions {
-            var parts: [String] = []
-            if let topProject = recap.topProjectDisplayPath {
-                parts.append("Top project: \(topProject)")
-            }
-            if let bestSession = recap.bestSession {
-                parts.append("Best session: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())")
-            }
-            if recap.totalAcceptedEdits > 0 || recap.totalRejectedActions > 0 {
-                parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
-            }
-            body = parts.isEmpty ? "Open Claux to review today’s sessions." : parts.joined(separator: " · ")
+            body = dailySummaryBody(for: recap)
         } else {
             body = "No Claude sessions today"
         }
@@ -247,12 +326,44 @@ final class NotificationManager: NSObject, ObservableObject {
              subtitle: subtitle,
              body: body,
              symbol: "chart.bar.fill",
+             category: .summaryAlert,
              userInfo: [
                 NotificationPayloadKey.target: NotificationTarget.dailyRecap.rawValue,
                 NotificationPayloadKey.dayKey: todayKey
              ])
 
         UserDefaults.standard.set(todayKey, forKey: "dailySummaryLastSent")
+    }
+
+    private func checkWeeklyRecap(store: AppStore) {
+        let enabled = (UserDefaults.standard.object(forKey: "weeklyRecapEnabled") as? Bool) ?? false
+        guard enabled, notificationsAvailable else { return }
+
+        let summaryHour = UserDefaults.standard.integer(forKey: "dailySummaryHour")
+        let currentHour = Calendar.current.component(.hour, from: Date())
+        guard currentHour >= summaryHour else { return }
+
+        let configuredWeekday = UserDefaults.standard.integer(forKey: "weeklyRecapWeekday")
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        guard weekday == configuredWeekday else { return }
+
+        let currentWeekKey = Format.weekKey(Date())
+        if UserDefaults.standard.string(forKey: "weeklyRecapLastSentWeekKey") == currentWeekKey { return }
+
+        guard let recap = store.weeklyRecap(excluding: Date()), recap.hasSessions else { return }
+
+        let subtitle = "Last 7 days · \(Format.cost(recap.totalCost)) across \(recap.sessionCount) session\(recap.sessionCount == 1 ? "" : "s")"
+        fire(
+            id: "weekly-recap-\(currentWeekKey)",
+            title: "Claux Weekly Recap",
+            subtitle: subtitle,
+            body: weeklySummaryBody(for: recap),
+            symbol: "calendar",
+            category: .summaryAlert,
+            userInfo: [NotificationPayloadKey.target: NotificationTarget.dashboard.rawValue]
+        )
+
+        UserDefaults.standard.set(currentWeekKey, forKey: "weeklyRecapLastSentWeekKey")
     }
 
     // MARK: – Individual alert checks
@@ -268,8 +379,11 @@ final class NotificationManager: NSObject, ObservableObject {
         fire(
             id: "cost-\(session.id)",
             title: "Cost Threshold Reached",
-            body: "\(session.displayPath) has spent \(Format.cost(session.totalCost)) this session.",
-            symbol: "dollarsign.circle"
+            subtitle: "\(Format.cost(session.totalCost)) spent · \(Format.cost(session.burnRatePerHour))/hr",
+            body: costAlertBody(for: session),
+            symbol: "dollarsign.circle",
+            category: .sessionAlert,
+            userInfo: sessionUserInfo(for: session)
         )
     }
 
@@ -285,8 +399,11 @@ final class NotificationManager: NSObject, ObservableObject {
             fire(
                 id: "ctx-critical-\(session.id)",
                 title: "Context Window Critical",
-                body: "\(session.displayPath) context is \(Int(fraction * 100))% full. Consider starting a new session.",
-                symbol: "exclamationmark.triangle"
+                subtitle: "\(ModelInfo.shortName(session.model)) · \(Int(fraction * 100))% full",
+                body: contextAlertBody(for: session, critical: true),
+                symbol: "exclamationmark.triangle",
+                category: .sessionAlert,
+                userInfo: sessionUserInfo(for: session)
             )
         }
 
@@ -298,8 +415,11 @@ final class NotificationManager: NSObject, ObservableObject {
             fire(
                 id: "ctx-warning-\(session.id)",
                 title: "Context Window Warning",
-                body: "\(session.displayPath) context is \(Int(fraction * 100))% full.",
-                symbol: "exclamationmark.circle"
+                subtitle: "\(ModelInfo.shortName(session.model)) · \(Int(fraction * 100))% full",
+                body: contextAlertBody(for: session, critical: false),
+                symbol: "exclamationmark.circle",
+                category: .sessionAlert,
+                userInfo: sessionUserInfo(for: session)
             )
         }
     }
@@ -312,9 +432,12 @@ final class NotificationManager: NSObject, ObservableObject {
         subtitle: String? = nil,
         body: String,
         symbol: String,
+        category: NotificationCategoryIdentifier,
         userInfo: [AnyHashable: Any] = [:]
     ) {
         guard notificationsAvailable else { return }
+        guard !notificationsSnoozedToday() else { return }
+        guard !isWithinQuietHours() else { return }
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             guard let self else { return }
             DispatchQueue.main.async { self.authStatus = settings.authorizationStatus }
@@ -328,11 +451,162 @@ final class NotificationManager: NSObject, ObservableObject {
             content.subtitle = subtitle ?? ""
             content.body  = body
             content.sound = .default
+            content.categoryIdentifier = category.rawValue
             content.userInfo = userInfo
             UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: id, content: content, trigger: nil)
             )
         }
+    }
+
+    private func sessionUserInfo(for session: ClaudeSession) -> [AnyHashable: Any] {
+        [
+            NotificationPayloadKey.target: NotificationTarget.session.rawValue,
+            NotificationPayloadKey.sessionID: session.id.uuidString
+        ]
+    }
+
+    private func currentVerbosity() -> NotificationVerbosity {
+        let rawValue = UserDefaults.standard.string(forKey: "notificationVerbosity") ?? NotificationVerbosity.standard.rawValue
+        return NotificationVerbosity(rawValue: rawValue) ?? .standard
+    }
+
+    private func sessionEndedBody(for session: ClaudeSession) -> String {
+        let errors = session.errorCount
+        switch currentVerbosity() {
+        case .minimal:
+            return "\(session.qualityMetrics.acceptedEdits) accepted edits · \(errors) error\(errors == 1 ? "" : "s")"
+        case .standard:
+            return "\(session.qualityMetrics.touchedFileCount) files touched · \(session.qualityMetrics.acceptedEdits) accepted edits · \(errors) error\(errors == 1 ? "" : "s")"
+        case .detailed:
+            return "\(session.displayPath) · \(session.qualityMetrics.touchedFileCount) files touched · \(session.qualityMetrics.acceptedEdits) accepted edits · \(errors) error\(errors == 1 ? "" : "s")"
+        }
+    }
+
+    private func costAlertBody(for session: ClaudeSession) -> String {
+        let projected = Format.cost(session.projectedCost)
+        let burnRate = Format.cost(session.burnRatePerHour)
+        switch currentVerbosity() {
+        case .minimal:
+            return "Projected 1h total: \(projected)"
+        case .standard:
+            return "\(session.displayPath) is burning \(burnRate)/hr · Projected 1h total: \(projected)"
+        case .detailed:
+            return "\(session.displayPath) · \(ModelInfo.shortName(session.model)) · Burn \(burnRate)/hr · Projected 1h total: \(projected)"
+        }
+    }
+
+    private func contextAlertBody(for session: ClaudeSession, critical: Bool) -> String {
+        let percentage = Int(session.contextHealthFraction * 100)
+        let advice = "Consider compacting or starting a new session."
+        switch currentVerbosity() {
+        case .minimal:
+            return advice
+        case .standard:
+            return "\(session.displayPath) is \(percentage)% full. \(advice)"
+        case .detailed:
+            let tokenCount = session.tokenUsage.contextWindowTokens > 0
+                ? session.tokenUsage.contextWindowTokens
+                : session.tokenUsage.totalContextTokens
+            let prefix = critical ? "Critical" : "Warning"
+            return "\(prefix): \(session.displayPath) is using \(Format.tokens(tokenCount)) context tokens. \(advice)"
+        }
+    }
+
+    private func dailySummaryBody(for recap: DailyRecap) -> String {
+        switch currentVerbosity() {
+        case .minimal:
+            if let bestSession = recap.bestSession {
+                return "Best session: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())"
+            }
+            return "Open Claux to review today’s sessions."
+        case .standard:
+            var parts: [String] = []
+            if let topProject = recap.topProjectDisplayPath {
+                parts.append("Top project: \(topProject)")
+            }
+            if let bestSession = recap.bestSession {
+                parts.append("Best session: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())")
+            }
+            if recap.totalAcceptedEdits > 0 || recap.totalRejectedActions > 0 {
+                parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
+            }
+            return parts.isEmpty ? "Open Claux to review today’s sessions." : parts.joined(separator: " · ")
+        case .detailed:
+            var parts: [String] = []
+            if let topProject = recap.topProjectDisplayPath {
+                parts.append("Top project: \(topProject)")
+            }
+            if let topModel = recap.topModelDisplayName {
+                parts.append("Top model: \(topModel)")
+            }
+            if let bestSession = recap.bestSession {
+                parts.append("Best: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())")
+            }
+            parts.append("Files touched: \(recap.totalTouchedFileCount)")
+            parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    private func weeklySummaryBody(for recap: WeeklyRecap) -> String {
+        switch currentVerbosity() {
+        case .minimal:
+            if let topProject = recap.topProjectDisplayPath {
+                return "Top project: \(topProject)"
+            }
+            return "Open Claux to review the last 7 days."
+        case .standard:
+            var parts: [String] = []
+            if let topProject = recap.topProjectDisplayPath {
+                parts.append("Top project: \(topProject)")
+            }
+            if let bestSession = recap.bestSession {
+                parts.append("Best session: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())")
+            }
+            parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
+            return parts.joined(separator: " · ")
+        case .detailed:
+            var parts: [String] = []
+            if let topProject = recap.topProjectDisplayPath {
+                parts.append("Top project: \(topProject)")
+            }
+            if let topModel = recap.topModelDisplayName {
+                parts.append("Top model: \(topModel)")
+            }
+            if let highestSpend = recap.mostExpensiveSession {
+                parts.append("Highest spend: \(Format.cost(highestSpend.dayCost))")
+            }
+            parts.append("Files touched: \(recap.totalTouchedFileCount)")
+            parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    private func summarySchedulingAllowedToday() -> Bool {
+        let weekdaysOnly = (UserDefaults.standard.object(forKey: "summaryWeekdaysOnly") as? Bool) ?? false
+        guard weekdaysOnly else { return true }
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        return (2...6).contains(weekday)
+    }
+
+    private func notificationsSnoozedToday() -> Bool {
+        UserDefaults.standard.string(forKey: "notificationSnoozedDayKey") == Format.dayKey(Date())
+    }
+
+    private func isWithinQuietHours(now: Date = Date()) -> Bool {
+        let enabled = (UserDefaults.standard.object(forKey: "notificationsQuietHoursEnabled") as? Bool) ?? false
+        guard enabled else { return false }
+
+        let startHour = UserDefaults.standard.integer(forKey: "notificationsQuietHoursStart")
+        let endHour = UserDefaults.standard.integer(forKey: "notificationsQuietHoursEnd")
+        let hour = Calendar.current.component(.hour, from: now)
+
+        if startHour == endHour { return true }
+        if startHour < endHour {
+            return hour >= startHour && hour < endHour
+        }
+        return hour >= startHour || hour < endHour
     }
 }
 
@@ -356,10 +630,33 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
 
         guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
 
+        if response.actionIdentifier == NotificationActionIdentifier.snoozeToday.rawValue {
+            UserDefaults.standard.set(Format.dayKey(Date()), forKey: "notificationSnoozedDayKey")
+            return
+        }
+
+        if response.actionIdentifier == NotificationActionIdentifier.openDashboard.rawValue {
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .clauxOpenDashboard, object: nil)
+            }
+            return
+        }
+
         let userInfo = response.notification.request.content.userInfo
         guard let target = userInfo[NotificationPayloadKey.target] as? String else { return }
 
         switch NotificationTarget(rawValue: target) {
+        case .session:
+            guard let sessionID = userInfo[NotificationPayloadKey.sessionID] as? String else { return }
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(
+                    name: .clauxOpenSession,
+                    object: nil,
+                    userInfo: [NotificationPayloadKey.sessionID: sessionID]
+                )
+            }
         case .dailyRecap:
             let dayKey = (userInfo[NotificationPayloadKey.dayKey] as? String) ?? Format.dayKey(Date())
             DispatchQueue.main.async {
@@ -369,6 +666,11 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
                     object: nil,
                     userInfo: [NotificationPayloadKey.dayKey: dayKey]
                 )
+            }
+        case .dashboard:
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .clauxOpenDashboard, object: nil)
             }
         case .none:
             break

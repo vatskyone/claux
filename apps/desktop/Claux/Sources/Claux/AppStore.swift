@@ -67,6 +67,10 @@ final class AppStore: ObservableObject {
             "appTheme", "costProjectionPeriod",
             "claudemdAlertEnabled", "claudemdThreshold",
             "monthlyBudget", "dailySummaryEnabled", "dailySummaryHour",
+            "weeklyRecapEnabled", "weeklyRecapWeekday", "summaryWeekdaysOnly",
+            "notificationVerbosity", "notificationsQuietHoursEnabled",
+            "notificationsQuietHoursStart", "notificationsQuietHoursEnd",
+            "notificationSnoozedDayKey", "weeklyRecapLastSentWeekKey",
         ]
         keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         monitor.invalidateCache()
@@ -82,24 +86,7 @@ final class AppStore: ObservableObject {
             let startedToday = calendar.isDate(session.startTime, inSameDayAs: targetDay)
             guard dayCost > 0 || startedToday else { return nil }
 
-            let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                ? session.title!
-                : session.displayPath
-
-            return DailyRecapSession(
-                id: session.id,
-                title: title,
-                subtitle: session.displayPath,
-                modelDisplayName: ModelInfo.shortName(session.model),
-                projectDisplayPath: session.displayPath,
-                dayCost: dayCost,
-                duration: session.duration,
-                qualityScore: session.qualityMetrics.score,
-                qualityLabel: session.qualityMetrics.scoreLabel,
-                acceptedEdits: session.qualityMetrics.acceptedEdits,
-                rejectedActions: session.qualityMetrics.rejectedToolResults,
-                touchedFileCount: session.qualityMetrics.touchedFileCount
-            )
+            return makeRecapSession(from: session, cost: dayCost)
         }
         .sorted { lhs, rhs in
             if lhs.dayCost != rhs.dayCost { return lhs.dayCost > rhs.dayCost }
@@ -155,9 +142,85 @@ final class AppStore: ObservableObject {
         )
     }
 
+    func weeklyRecap(excluding day: Date = Date()) -> WeeklyRecap? {
+        let calendar = Calendar.current
+        let cutoffDay = calendar.startOfDay(for: day)
+        let endDay = calendar.date(byAdding: .day, value: -1, to: cutoffDay) ?? cutoffDay
+        let startDay = calendar.date(byAdding: .day, value: -6, to: endDay) ?? endDay
+
+        let sessions = trackedSessions().compactMap { session -> DailyRecapSession? in
+            let periodCost = session.dailyCosts.reduce(into: 0.0) { result, entry in
+                if entry.key >= startDay && entry.key <= endDay {
+                    result += entry.value
+                }
+            }
+            let startedInRange = session.startTime >= startDay && session.startTime < cutoffDay
+            guard periodCost > 0 || startedInRange else { return nil }
+            return makeRecapSession(from: session, cost: periodCost)
+        }
+        .sorted { lhs, rhs in
+            if lhs.dayCost != rhs.dayCost { return lhs.dayCost > rhs.dayCost }
+            return lhs.qualityScore > rhs.qualityScore
+        }
+
+        guard !sessions.isEmpty else { return nil }
+
+        let allTracked = trackedSessions()
+        let sessionsByID = Dictionary(uniqueKeysWithValues: allTracked.map { ($0.id, $0) })
+
+        var totalCost = 0.0
+        var totalAcceptedEdits = 0
+        var totalRejectedActions = 0
+        var touchedFiles = Set<String>()
+        var byProject: [String: Double] = [:]
+        var byModel: [String: Double] = [:]
+
+        for recapSession in sessions {
+            totalCost += recapSession.dayCost
+            totalAcceptedEdits += recapSession.acceptedEdits
+            totalRejectedActions += recapSession.rejectedActions
+
+            byProject[recapSession.projectDisplayPath, default: 0] += recapSession.dayCost
+            byModel[recapSession.modelDisplayName, default: 0] += recapSession.dayCost
+
+            if let sourceSession = sessionsByID[recapSession.id] {
+                touchedFiles.formUnion(sourceSession.qualityMetrics.touchedFiles)
+            }
+        }
+
+        let topProject = byProject.max { lhs, rhs in lhs.value < rhs.value }
+        let topModel = byModel.max { lhs, rhs in lhs.value < rhs.value }
+        let bestSession = sessions.max { lhs, rhs in
+            if lhs.qualityScore != rhs.qualityScore { return lhs.qualityScore < rhs.qualityScore }
+            return lhs.dayCost < rhs.dayCost
+        }
+
+        return WeeklyRecap(
+            startDay: startDay,
+            endDay: endDay,
+            totalCost: totalCost,
+            sessionCount: sessions.count,
+            totalAcceptedEdits: totalAcceptedEdits,
+            totalRejectedActions: totalRejectedActions,
+            totalTouchedFileCount: touchedFiles.count,
+            topProjectDisplayPath: topProject?.key,
+            topProjectCost: topProject?.value ?? 0,
+            topModelDisplayName: topModel?.key,
+            topModelCost: topModel?.value ?? 0,
+            bestSession: bestSession,
+            mostExpensiveSession: sessions.first,
+            sessions: sessions
+        )
+    }
+
     func dailyRecap(forDayKey dayKey: String) -> DailyRecap? {
         guard let date = Format.date(fromDayKey: dayKey) else { return nil }
         return dailyRecap(for: date)
+    }
+
+    func session(idString: String) -> ClaudeSession? {
+        guard let id = UUID(uuidString: idString) else { return nil }
+        return trackedSessions().first(where: { $0.id == id })
     }
 
     // MARK: – Private helpers
@@ -265,6 +328,27 @@ final class AppStore: ObservableObject {
             )
         }
         .sorted { $0.totalCost > $1.totalCost }
+    }
+
+    private func makeRecapSession(from session: ClaudeSession, cost: Double) -> DailyRecapSession {
+        let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? session.title!
+            : session.displayPath
+
+        return DailyRecapSession(
+            id: session.id,
+            title: title,
+            subtitle: session.displayPath,
+            modelDisplayName: ModelInfo.shortName(session.model),
+            projectDisplayPath: session.displayPath,
+            dayCost: cost,
+            duration: session.duration,
+            qualityScore: session.qualityMetrics.score,
+            qualityLabel: session.qualityMetrics.scoreLabel,
+            acceptedEdits: session.qualityMetrics.acceptedEdits,
+            rejectedActions: session.qualityMetrics.rejectedToolResults,
+            touchedFileCount: session.qualityMetrics.touchedFileCount
+        )
     }
 
     private func trackedSessions() -> [ClaudeSession] {

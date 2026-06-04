@@ -2,6 +2,13 @@
 
 ---
 
+## [1.15.0] — 2026-06-04
+
+### New Features
+- **Actionable session notifications** (`NotificationManager.swift`, `ClauxApp.swift`, `Views/PopoverView.swift`, `AppStore.swift`) — session-ended, cost-threshold, and context-window alerts now carry richer session diagnostics plus notification actions to open the session, open the dashboard, or snooze the rest of the day.
+- **Notification verbosity and scheduling controls** (`NotificationManager.swift`, `Views/SettingsView.swift`, `Design.swift`) — added `Minimal`, `Standard`, and `Detailed` notification modes together with quiet hours, weekday-only summaries, and weekly recap scheduling in Settings.
+- **Weekly recap notification** (`NotificationManager.swift`, `AppStore.swift`, `Models.swift`) — Claux can now send a weekly recap for the last 7 completed days with top project/model and editing outcomes in addition to the existing daily summary.
+
 ## [1.14.0] — 2026-06-04
 
 ### New Features

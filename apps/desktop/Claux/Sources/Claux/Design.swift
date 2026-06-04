@@ -4,7 +4,7 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.14.0"
+    static let current = "1.15.0"
 }
 
 enum StateColorPreset: String, CaseIterable, Identifiable {
@@ -248,6 +248,11 @@ enum Format {
 
     static func date(fromDayKey key: String) -> Date? {
         dayKeyFormatter.date(from: key)
+    }
+
+    static func weekKey(_ date: Date) -> String {
+        let components = Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return "\(components.yearForWeekOfYear ?? 0)-W\(components.weekOfYear ?? 0)"
     }
 }
 

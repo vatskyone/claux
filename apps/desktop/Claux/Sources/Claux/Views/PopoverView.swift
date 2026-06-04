@@ -90,6 +90,24 @@ struct PopoverView: View {
                 selectedDailyRecap = recap
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .clauxOpenDashboard)) { _ in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activeTab = .dashboard
+                selectedSession = nil
+                selectedDailyRecap = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clauxOpenSession)) { notification in
+            guard let sessionID = notification.userInfo?["sessionID"] as? String,
+                  let session = store.session(idString: sessionID)
+            else { return }
+
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activeTab = session.isActive ? .dashboard : .history
+                selectedDailyRecap = nil
+                selectedSession = session
+            }
+        }
     }
 
     // MARK: – Tab content router
