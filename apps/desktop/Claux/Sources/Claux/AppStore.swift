@@ -74,6 +74,92 @@ final class AppStore: ObservableObject {
         rateLimitMonitor.refresh()
     }
 
+    func dailyRecap(for day: Date = Date()) -> DailyRecap? {
+        let calendar = Calendar.current
+        let targetDay = calendar.startOfDay(for: day)
+        let sessions = trackedSessions().compactMap { session -> DailyRecapSession? in
+            let dayCost = session.dailyCosts[targetDay] ?? 0
+            let startedToday = calendar.isDate(session.startTime, inSameDayAs: targetDay)
+            guard dayCost > 0 || startedToday else { return nil }
+
+            let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? session.title!
+                : session.displayPath
+
+            return DailyRecapSession(
+                id: session.id,
+                title: title,
+                subtitle: session.displayPath,
+                modelDisplayName: ModelInfo.shortName(session.model),
+                projectDisplayPath: session.displayPath,
+                dayCost: dayCost,
+                duration: session.duration,
+                qualityScore: session.qualityMetrics.score,
+                qualityLabel: session.qualityMetrics.scoreLabel,
+                acceptedEdits: session.qualityMetrics.acceptedEdits,
+                rejectedActions: session.qualityMetrics.rejectedToolResults,
+                touchedFileCount: session.qualityMetrics.touchedFileCount
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.dayCost != rhs.dayCost { return lhs.dayCost > rhs.dayCost }
+            return lhs.qualityScore > rhs.qualityScore
+        }
+
+        guard !sessions.isEmpty else { return nil }
+
+        let allTracked = trackedSessions()
+        let sessionsByID = Dictionary(uniqueKeysWithValues: allTracked.map { ($0.id, $0) })
+
+        var totalCost = 0.0
+        var totalAcceptedEdits = 0
+        var totalRejectedActions = 0
+        var touchedFiles = Set<String>()
+        var byProject: [String: Double] = [:]
+        var byModel: [String: Double] = [:]
+
+        for recapSession in sessions {
+            totalCost += recapSession.dayCost
+            totalAcceptedEdits += recapSession.acceptedEdits
+            totalRejectedActions += recapSession.rejectedActions
+
+            byProject[recapSession.projectDisplayPath, default: 0] += recapSession.dayCost
+            byModel[recapSession.modelDisplayName, default: 0] += recapSession.dayCost
+
+            if let sourceSession = sessionsByID[recapSession.id] {
+                touchedFiles.formUnion(sourceSession.qualityMetrics.touchedFiles)
+            }
+        }
+
+        let topProject = byProject.max { lhs, rhs in lhs.value < rhs.value }
+        let topModel = byModel.max { lhs, rhs in lhs.value < rhs.value }
+        let bestSession = sessions.max { lhs, rhs in
+            if lhs.qualityScore != rhs.qualityScore { return lhs.qualityScore < rhs.qualityScore }
+            return lhs.dayCost < rhs.dayCost
+        }
+
+        return DailyRecap(
+            day: targetDay,
+            totalCost: totalCost,
+            sessionCount: sessions.count,
+            totalAcceptedEdits: totalAcceptedEdits,
+            totalRejectedActions: totalRejectedActions,
+            totalTouchedFileCount: touchedFiles.count,
+            topProjectDisplayPath: topProject?.key,
+            topProjectCost: topProject?.value ?? 0,
+            topModelDisplayName: topModel?.key,
+            topModelCost: topModel?.value ?? 0,
+            bestSession: bestSession,
+            mostExpensiveSession: sessions.first,
+            sessions: sessions
+        )
+    }
+
+    func dailyRecap(forDayKey dayKey: String) -> DailyRecap? {
+        guard let date = Format.date(fromDayKey: dayKey) else { return nil }
+        return dailyRecap(for: date)
+    }
+
     // MARK: – Private helpers
 
     private func updateUI(from sessions: [ClaudeSession]) {
@@ -179,6 +265,14 @@ final class AppStore: ObservableObject {
             )
         }
         .sorted { $0.totalCost > $1.totalCost }
+    }
+
+    private func trackedSessions() -> [ClaudeSession] {
+        var sessions = recentSessions
+        if let activeSession {
+            sessions.append(activeSession)
+        }
+        return sessions
     }
 }
 

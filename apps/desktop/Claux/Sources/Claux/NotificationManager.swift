@@ -2,10 +2,22 @@ import UserNotifications
 import Combine
 import AppKit
 
+extension Notification.Name {
+    static let clauxOpenDailyRecap = Notification.Name("clauxOpenDailyRecap")
+}
+
 // MARK: – NotificationManager
 // Owns all UNUserNotificationCenter interactions for Claux.
 // Observes AppStore and fires alerts when thresholds are crossed.
 final class NotificationManager: NSObject, ObservableObject {
+    private enum NotificationPayloadKey {
+        static let target = "clauxTarget"
+        static let dayKey = "dayKey"
+    }
+
+    private enum NotificationTarget: String {
+        case dailyRecap
+    }
 
     static let shared = NotificationManager()
 
@@ -202,28 +214,43 @@ final class NotificationManager: NSObject, ObservableObject {
         let currentHour = Calendar.current.component(.hour, from: Date())
         guard currentHour >= summaryHour else { return }
 
-        // Build a local-timezone date key "YYYY-MM-DD"
-        let comps   = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        let todayKey = "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
+        let todayKey = Format.dayKey(Date())
 
         // Already sent today?
         if UserDefaults.standard.string(forKey: "dailySummaryLastSent") == todayKey { return }
 
-        // Count today's sessions (recent + active if started today)
-        var count = store.recentSessions.filter { Calendar.current.isDateInToday($0.startTime) }.count
-        if let active = store.activeSession, Calendar.current.isDateInToday(active.startTime) {
-            count += 1
-        }
+        let recap = store.dailyRecap(for: Date())
+        let sessionCount = recap?.sessionCount ?? 0
+        let subtitle = sessionCount > 0
+            ? "\(Format.cost(recap?.totalCost ?? 0)) across \(sessionCount) session\(sessionCount == 1 ? "" : "s")"
+            : nil
+        let body: String
 
-        let total = store.spendSummary.today
-        let body  = count > 0
-            ? "Today: \(Format.cost(total)) · \(count) session\(count == 1 ? "" : "s")"
-            : "No Claude sessions today"
+        if let recap, recap.hasSessions {
+            var parts: [String] = []
+            if let topProject = recap.topProjectDisplayPath {
+                parts.append("Top project: \(topProject)")
+            }
+            if let bestSession = recap.bestSession {
+                parts.append("Best session: \(bestSession.qualityScore) \(bestSession.qualityLabel.lowercased())")
+            }
+            if recap.totalAcceptedEdits > 0 || recap.totalRejectedActions > 0 {
+                parts.append("Edits: \(recap.totalAcceptedEdits) accepted · \(recap.totalRejectedActions) rejected")
+            }
+            body = parts.isEmpty ? "Open Claux to review today’s sessions." : parts.joined(separator: " · ")
+        } else {
+            body = "No Claude sessions today"
+        }
 
         fire(id: "daily-summary-\(todayKey)",
              title: "Claux Daily Summary",
+             subtitle: subtitle,
              body: body,
-             symbol: "chart.bar.fill")
+             symbol: "chart.bar.fill",
+             userInfo: [
+                NotificationPayloadKey.target: NotificationTarget.dailyRecap.rawValue,
+                NotificationPayloadKey.dayKey: todayKey
+             ])
 
         UserDefaults.standard.set(todayKey, forKey: "dailySummaryLastSent")
     }
@@ -279,7 +306,14 @@ final class NotificationManager: NSObject, ObservableObject {
 
     // MARK: – Delivery
 
-    private func fire(id: String, title: String, body: String, symbol: String) {
+    private func fire(
+        id: String,
+        title: String,
+        subtitle: String? = nil,
+        body: String,
+        symbol: String,
+        userInfo: [AnyHashable: Any] = [:]
+    ) {
         guard notificationsAvailable else { return }
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             guard let self else { return }
@@ -291,8 +325,10 @@ final class NotificationManager: NSObject, ObservableObject {
 
             let content   = UNMutableNotificationContent()
             content.title = title
+            content.subtitle = subtitle ?? ""
             content.body  = body
             content.sound = .default
+            content.userInfo = userInfo
             UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: id, content: content, trigger: nil)
             )
@@ -309,5 +345,33 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         handler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
+
+        let userInfo = response.notification.request.content.userInfo
+        guard let target = userInfo[NotificationPayloadKey.target] as? String else { return }
+
+        switch NotificationTarget(rawValue: target) {
+        case .dailyRecap:
+            let dayKey = (userInfo[NotificationPayloadKey.dayKey] as? String) ?? Format.dayKey(Date())
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(
+                    name: .clauxOpenDailyRecap,
+                    object: nil,
+                    userInfo: [NotificationPayloadKey.dayKey: dayKey]
+                )
+            }
+        case .none:
+            break
+        }
     }
 }

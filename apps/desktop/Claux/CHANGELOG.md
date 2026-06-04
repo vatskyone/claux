@@ -2,6 +2,11 @@
 
 ---
 
+## [1.14.0] — 2026-06-04
+
+### New Features
+- **Daily recap notification drill-down** (`NotificationManager.swift`, `AppStore.swift`, `Views/DailyRecapSheet.swift`, `Views/PopoverView.swift`, `ClauxApp.swift`) — daily summary notifications now include a richer spend/session digest and clicking the notification opens a new in-app daily recap sheet with top project, top model, accepted/rejected actions, and the day’s strongest sessions.
+
 ## [1.13.3] — 2026-06-03
 
 ### Improvements

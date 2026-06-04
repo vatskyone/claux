@@ -184,6 +184,41 @@ struct DailySpend: Identifiable {
     let cost:  Double
 }
 
+struct DailyRecapSession: Identifiable {
+    let id: UUID
+    let title: String
+    let subtitle: String
+    let modelDisplayName: String
+    let projectDisplayPath: String
+    let dayCost: Double
+    let duration: TimeInterval
+    let qualityScore: Int
+    let qualityLabel: String
+    let acceptedEdits: Int
+    let rejectedActions: Int
+    let touchedFileCount: Int
+}
+
+struct DailyRecap {
+    let day: Date
+    let totalCost: Double
+    let sessionCount: Int
+    let totalAcceptedEdits: Int
+    let totalRejectedActions: Int
+    let totalTouchedFileCount: Int
+    let topProjectDisplayPath: String?
+    let topProjectCost: Double
+    let topModelDisplayName: String?
+    let topModelCost: Double
+    let bestSession: DailyRecapSession?
+    let mostExpensiveSession: DailyRecapSession?
+    let sessions: [DailyRecapSession]
+
+    var hasSessions: Bool {
+        sessionCount > 0
+    }
+}
+
 // MARK: – Per-project breakdown (for analytics)
 struct ProjectSpend: Identifiable {
     var id: String { path }

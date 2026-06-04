@@ -148,6 +148,13 @@ final class ClauxStatusItemController: NSObject {
                 self?.updateVisibilityAndAppearance()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.showPanelForNotification()
+            }
+            .store(in: &cancellables)
     }
 
     private func shouldShowStatusItem() -> Bool {
@@ -256,6 +263,17 @@ final class ClauxStatusItemController: NSObject {
     private func showPanelForOnboarding() {
         guard let panel, !panel.isVisible, let button = statusItem?.button else { return }
         alignPanelToMenuBar(from: button)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func showPanelForNotification() {
+        guard let panel else { return }
+        if let button = statusItem?.button {
+            alignPanelToMenuBar(from: button)
+        } else {
+            panel.center()
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }

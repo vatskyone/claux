@@ -16,6 +16,7 @@ struct PopoverView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var selectedSession: ClaudeSession? = nil
+    @State private var selectedDailyRecap: DailyRecap? = nil
     @State private var activeTab: PopoverTab = .dashboard
 
     @AppStorage("onboardingCompleted") private var onboardingCompleted: Bool = false
@@ -36,7 +37,21 @@ struct PopoverView: View {
                 }
 
                 // Session detail overlay — slides up from bottom when a row is tapped.
-                if let session = selectedSession {
+                if let recap = selectedDailyRecap {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.18)) { selectedDailyRecap = nil }
+                        }
+                        .transition(.opacity)
+
+                    DailyRecapSheet(recap: recap) {
+                        withAnimation(.easeInOut(duration: 0.18)) { selectedDailyRecap = nil }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: .black.opacity(0.18), radius: 12, y: -4)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let session = selectedSession {
                     Color.black.opacity(0.25)
                         .ignoresSafeArea()
                         .onTapGesture {
@@ -65,6 +80,15 @@ struct PopoverView: View {
         .id(stateColorPreset)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             store.refreshNow()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)) { notification in
+            let dayKey = notification.userInfo?["dayKey"] as? String ?? Format.dayKey(Date())
+            guard let recap = store.dailyRecap(forDayKey: dayKey) else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                activeTab = .dashboard
+                selectedSession = nil
+                selectedDailyRecap = recap
+            }
         }
     }
 

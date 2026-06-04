@@ -4,7 +4,7 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.13.3"
+    static let current = "1.14.0"
 }
 
 enum StateColorPreset: String, CaseIterable, Identifiable {
@@ -201,6 +201,15 @@ enum ModelInfo {
 
 // MARK: – Formatting helpers
 enum Format {
+    private static let dayKeyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar.current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     static func cost(_ value: Double) -> String {
         String(format: "$%.2f", value)
     }
@@ -231,6 +240,14 @@ enum Format {
             return "~/" + parts.dropFirst(3).joined(separator: "/")
         }
         return raw
+    }
+
+    static func dayKey(_ date: Date) -> String {
+        dayKeyFormatter.string(from: date)
+    }
+
+    static func date(fromDayKey key: String) -> Date? {
+        dayKeyFormatter.date(from: key)
     }
 }
 
