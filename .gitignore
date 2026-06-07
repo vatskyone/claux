@@ -35,5 +35,11 @@ dist/
 # Rust / Cargo
 apps/cli/target/
 
+# Claude Code local data (session history, permissions, hooks)
+.claude/
+
+# Claux local data (checkpoints, context snapshots with real cost/path data)
+.claux/
+
 # Misc
 *.log
