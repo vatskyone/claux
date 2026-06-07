@@ -295,14 +295,34 @@ Notes:
 
 ---
 
+### `claux checkpoint`
+
+Save and restore named project checkpoints. Each checkpoint records git state, session cost, and CLAUDE.md quality at a point in time. Checkpoints are stored both locally (`~/.claude/claux/checkpoints/<project-hash>.json`) and inside the project (`.claux/checkpoints.json`) so they can be committed and shared with the repo.
+
+```bash
+claux checkpoint save                      # prompt for a name, then save
+claux checkpoint save "before auth refactor"
+
+claux checkpoint list                      # table of all checkpoints for current project
+
+claux checkpoint load <id>                 # print checkpoint context as Markdown to stdout
+claux checkpoint load <id> --write         # also write .claux/CONTEXT.md into the project
+
+claux checkpoint delete <id>               # remove a checkpoint
+```
+
+The `--write` flag produces a structured `.claux/CONTEXT.md` that agents can load at session start to resume with full context: git branch, commit, cost, changed files, and CLAUDE.md score.
+
+---
+
 ### `claux tui`
 
 Full-screen ratatui TUI dashboard. Press `q` to quit, `←`/`→` (or `h`/`l`) to switch tabs, `r` to refresh.
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  ● Dashboard   Sessions   Analytics   Agents  Skills │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  ● Dashboard   Sessions   Analytics   Agents   Skills  History │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -417,6 +437,27 @@ Skill list (top 40% of screen) + detail panel (bottom 60%).
 
 ---
 
+### History tab
+
+Browse, save, and restore named project checkpoints without leaving the TUI.
+
+**Checkpoint list** (top 40%) — columns: ID · Name · Saved date · Git branch · Total cost · Files changed since prior checkpoint.
+
+**Checkpoint detail** (bottom 60%) — name, date, branch + commit hash, cost breakdown, CLAUDE.md score, list of files changed since the prior checkpoint, and action hints.
+
+**Inline actions:**
+
+| Key | Action |
+|---|---|
+| `s` | Save a new checkpoint — type a name, `Enter` to confirm, `Esc` to cancel |
+| `w` | Write `.claux/CONTEXT.md` into the project directory (agent-loadable context file) |
+| `d` | Delete the selected checkpoint |
+| `↑` / `↓` | Navigate checkpoint list |
+
+Each checkpoint captures: git branch + commit, lifetime project cost, active session cost, session count, and CLAUDE.md score at the time of saving. The per-project copy at `.claux/checkpoints.json` is committable and travels with the repo.
+
+---
+
 ## Configuration
 
 ### Budget limits
@@ -497,7 +538,7 @@ commands::*::run(&sessions)          claux status / sessions / spend / analytics
 commands::tui::run()                 ratatui event loop — 5 s auto-refresh
         │  → App state machine
         ▼
-draw_dashboard / draw_sessions_list / draw_analytics / draw_agents_screen / draw_skills_screen
+draw_dashboard / draw_sessions_list / draw_analytics / draw_agents_screen / draw_skills_screen / draw_history_screen
 ```
 
 ### Key design decisions
@@ -560,17 +601,25 @@ Model ID matching uses substring (`opus` / `sonnet` / `haiku`) so new model vers
 | `↑` / `↓` | Move skill cursor |
 | `r` | Refresh skills |
 
+### History tab
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Navigate checkpoints |
+| `s` | Save new checkpoint |
+| `w` | Write `.claux/CONTEXT.md` |
+| `d` | Delete selected checkpoint |
+
 ---
 
 ## Roadmap
 
-### v0.7.0 — Alerts & notifications
-- [ ] `claux watch` — stay-running process that posts macOS notifications when cost/context thresholds are crossed
-- [ ] `--cost-alert N` flag for `claux watch`: notify when session crosses $N
-- [ ] `--context-alert N` flag: notify when context window hits N%
-- [ ] Webhook/Slack integration for spend alerts
+### v0.8.0 — Alerts & automation
+- [ ] `claux watch` — stay-running process that posts macOS notifications when cost or context thresholds are crossed
+- [ ] `--cost-alert N` and `--context-alert N` flags
+- [ ] Webhook / Slack integration for spend alerts
 
-### v0.8.0 — Team & sync
+### v0.9.0 — Team & sync
 - [ ] `claux export --since <date>` for incremental exports
 - [ ] Per-project spend budgets (not just weekly total)
 - [ ] JSON feed mode for external dashboard integrations
