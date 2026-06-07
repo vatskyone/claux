@@ -67,20 +67,10 @@ struct SettingsView: View {
     @AppStorage("monitoredDirectory")    private var watchDirectory:      String = "~/.claude"
     @AppStorage("includeCacheCost")      private var includeCacheCost:    Bool   = true
 
-    // ── Account ──────────────────────────────────────────────────────────────
-    @AppStorage("clauxAccountEmail")     private var accountEmail:        String = ""
-    @AppStorage("clauxSyncEnabled")      private var syncEnabled:         Bool   = true
-
     // ── Local UI state ───────────────────────────────────────────────────────
     @State private var showResetConfirm   = false
-    @State private var showSignInSheet    = false
-    @State private var showSignOutConfirm = false
-    @State private var signInEmailDraft   = ""
-    @State private var signInError: String?
     @State private var resetDone          = false
     @State private var loginItemError: String?
-
-    private var isSignedIn: Bool { !accountEmail.isEmpty }
 
     /// True when SMAppService confirms the app is registered as a login item.
     private var isRegisteredAtLogin: Bool {
@@ -394,76 +384,6 @@ struct SettingsView: View {
             }
             .listRowBackground(Color.clear)
 
-            // ── Account ───────────────────────────────────────────────────────
-            Section {
-                if isSignedIn {
-                    LabeledContent("Account") {
-                        Text(accountEmail)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-
-                    LabeledContent("Plan") {
-                        HStack(spacing: 6) {
-                            Text("Free")
-                                .foregroundStyle(.secondary)
-                            Text("Upgrade")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.clauxBlue)
-                                .onTapGesture {
-                                    NSWorkspace.shared.open(URL(string: "https://claux.app/upgrade")!)
-                                }
-                        }
-                    }
-
-                    Toggle("Sync usage data to cloud", isOn: $syncEnabled)
-                        .help("Upload aggregated session stats so you can view them on any device")
-
-                    LabeledContent("") {
-                        Button("Sign out…") {
-                            showSignOutConfirm = true
-                        }
-                        .controlSize(.small)
-                        .foregroundStyle(.red)
-                    }
-
-                } else {
-                    // Not signed in — marketing blurb + sign-in CTA
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Sign in to sync your usage data across devices and access the Claux web dashboard.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        HStack(spacing: 8) {
-                            Button {
-                                signInEmailDraft = ""
-                                signInError = nil
-                                showSignInSheet = true
-                            } label: {
-                                Label("Sign in with email", systemImage: "envelope")
-                            }
-                            .controlSize(.small)
-
-                            Button {
-                                // Apple Sign-in placeholder
-                                signInEmailDraft = ""
-                                signInError = nil
-                                showSignInSheet = true
-                            } label: {
-                                Label("Sign in with Apple", systemImage: "applelogo")
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            } header: {
-                Label("Account", systemImage: "person.circle")
-            }
-            .listRowBackground(Color.clear)
-
             // ── About ─────────────────────────────────────────────────────────
             Section {
                 LabeledContent("Version") {
@@ -476,7 +396,7 @@ struct SettingsView: View {
                 }
 
                 LabeledContent("Feedback") {
-                    Link("Open an issue", destination: URL(string: "https://github.com/snowbayles/claux/issues/new")!)
+                    Link("Open an issue", destination: URL(string: "https://github.com/vatskyone/claux/issues")!)
                 }
 
                 LabeledContent("") {
@@ -484,7 +404,7 @@ struct SettingsView: View {
                         Button {
                             store.refreshNow()
                         } label: {
-                            Label("Refresh sessions now", systemImage: "arrow.clockwise")
+                            Label("Refresh sessions and plan limits", systemImage: "arrow.clockwise")
                         }
                         .controlSize(.small)
 
@@ -547,31 +467,6 @@ struct SettingsView: View {
             Text("All Claux settings will be reset to defaults. Your Claude session files are not affected.")
         }
 
-        // ── Sign-in sheet ─────────────────────────────────────────────────────
-        .sheet(isPresented: $showSignInSheet) {
-            SignInSheet(
-                emailDraft: $signInEmailDraft,
-                errorMessage: $signInError
-            ) { email in
-                accountEmail = email
-                showSignInSheet = false
-            }
-        }
-
-        // ── Sign-out confirmation ─────────────────────────────────────────────
-        .confirmationDialog(
-            "Sign out of Claux?",
-            isPresented: $showSignOutConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Sign out", role: .destructive) {
-                accountEmail = ""
-                syncEnabled  = true
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your local usage data will not be deleted.")
-        }
     }
 
     // MARK: – Launch at login
@@ -659,69 +554,5 @@ struct SettingsView: View {
         formatter.dateFormat = "h:00 a"
         let date = Calendar.current.date(from: DateComponents(hour: hour)) ?? Date()
         return formatter.string(from: date).lowercased()
-    }
-}
-
-// MARK: – Sign-in sheet
-private struct SignInSheet: View {
-    @Binding var emailDraft:    String
-    @Binding var errorMessage:  String?
-    let onSignIn: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(Color.clauxBlue)
-
-            Text("Sign in to Claux")
-                .font(.system(size: 18, weight: .semibold))
-
-            Text("Enter your email address to create a free account or sign into an existing one.")
-                .font(.system(size: 13))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
-
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("you@example.com", text: $emailDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 280)
-
-                if let err = errorMessage {
-                    Text(err)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.clauxRed)
-                        .frame(width: 280, alignment: .leading)
-                }
-            }
-
-            HStack(spacing: 12) {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-
-                Button("Continue") {
-                    let trimmed = emailDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed.contains("@") && trimmed.contains(".") {
-                        onSignIn(trimmed)
-                    } else {
-                        errorMessage = "Please enter a valid email address."
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(emailDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-
-            Text("By continuing you agree to the Claux Terms of Service and Privacy Policy.")
-                .font(.system(size: 10))
-                .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
-        }
-        .padding(28)
-        .frame(width: 360)
     }
 }

@@ -451,19 +451,21 @@ enum SessionParser {
     private static func findClaudeMd(startingAt startDir: String) -> String? {
         let fm   = FileManager.default
         let home = NSHomeDirectory()
+        let normalizedHome = normalizedPath(home)
 
         // Pass 1 – walk up
-        var dir = startDir
+        var dir = normalizedPath(startDir)
         for _ in 0..<8 {
+            if isTCCProtectedHomePath(dir) { break }
             let candidate = (dir as NSString).appendingPathComponent("CLAUDE.md")
             if fm.fileExists(atPath: candidate) { return candidate }
             let parent = (dir as NSString).deletingLastPathComponent
-            if parent == dir || dir == home || dir == "/" { break }
+            if parent == dir || dir == normalizedHome || dir == "/" { break }
             dir = parent
         }
 
         // Pass 2 – walk down (breadth-first, depth ≤ 4, skipping junk dirs)
-        return findClaudeMdDown(at: startDir, depth: 0, maxDepth: 4)
+        return findClaudeMdDown(at: normalizedPath(startDir), depth: 0, maxDepth: 4)
     }
 
     private static let skipDirs: Set<String> = [
@@ -471,8 +473,33 @@ enum SessionParser {
         "vendor", ".swiftpm", "dist", "build", ".next", "__pycache__",
     ]
 
+    // Avoid probing macOS privacy-protected home folders while scoring project
+    // CLAUDE.md files. Even file-existence checks in these folders can trigger
+    // TCC prompts such as "Media & Apple Music" or "Photos".
+    private static let tccProtectedHomeDirNames: Set<String> = [
+        "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures",
+    ]
+
+    private static func normalizedPath(_ path: String) -> String {
+        ((path as NSString).expandingTildeInPath as NSString).standardizingPath
+    }
+
+    private static func isTCCProtectedHomePath(_ path: String) -> Bool {
+        let normalized = normalizedPath(path)
+        let home = normalizedPath(NSHomeDirectory())
+        for dirName in tccProtectedHomeDirNames {
+            let protectedDir = (home as NSString).appendingPathComponent(dirName)
+            if normalized == protectedDir || normalized.hasPrefix(protectedDir + "/") {
+                return true
+            }
+        }
+        return false
+    }
+
     private static func findClaudeMdDown(at dir: String, depth: Int, maxDepth: Int) -> String? {
         let fm = FileManager.default
+        if isTCCProtectedHomePath(dir) { return nil }
+
         let candidate = (dir as NSString).appendingPathComponent("CLAUDE.md")
         if fm.fileExists(atPath: candidate) { return candidate }
         guard depth < maxDepth else { return nil }
@@ -481,6 +508,7 @@ enum SessionParser {
         for item in items.sorted() {
             if item.hasPrefix(".") || skipDirs.contains(item) { continue }
             let sub = (dir as NSString).appendingPathComponent(item)
+            if isTCCProtectedHomePath(sub) { continue }
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: sub, isDirectory: &isDir), isDir.boolValue else { continue }
             if let found = findClaudeMdDown(at: sub, depth: depth + 1, maxDepth: maxDepth) {
@@ -501,6 +529,8 @@ enum SessionParser {
     // Score recomputes whenever the session JSONL is re-parsed (mtime change).
     // If CLAUDE.md changes independently, use "Refresh sessions now" to rescore.
     static func scoreClaudeMd(at projectPath: String) -> Int? {
+        guard UserDefaults.standard.bool(forKey: "allowExternalClaudeMdScoring") else { return nil }
+        guard !isTCCProtectedHomePath(projectPath) else { return nil }
         guard let mdPath = findClaudeMd(startingAt: projectPath) else { return nil }
         guard let content = try? String(contentsOfFile: mdPath, encoding: .utf8),
               content.trimmingCharacters(in: .whitespacesAndNewlines).count > 10

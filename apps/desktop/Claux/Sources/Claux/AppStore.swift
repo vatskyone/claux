@@ -26,6 +26,7 @@ final class AppStore: ObservableObject {
         monitor.$sessions
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in
+                self?.rateLimitMonitor.refresh()
                 self?.updateUI(from: sessions)
             }
             .store(in: &cancellables)
@@ -52,7 +53,7 @@ final class AppStore: ObservableObject {
 
     // MARK: – Actions
 
-    /// Force an immediate re-scan of the monitored directory.
+    /// Force an immediate re-scan of sessions and plan-limit data.
     func refreshNow() {
         monitor.refresh()
         rateLimitMonitor.refresh()

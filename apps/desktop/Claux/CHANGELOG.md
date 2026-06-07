@@ -2,6 +2,17 @@
 
 ---
 
+## [1.15.1] — 2026-06-07
+
+### Bug Fixes
+- **TCC privacy guard for CLAUDE.md scanning** (`SessionParser.swift`) — added `isTCCProtectedHomePath` and `normalizedPath` helpers so the CLAUDE.md scorer never probes macOS privacy-protected home directories (`Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures`). Prevents unexpected TCC permission prompts (e.g. "Media & Apple Music") during session parsing. Scoring is also gated behind a new `allowExternalClaudeMdScoring` UserDefaults key and skips protected paths entirely.
+
+### Improvements
+- **Plan limits auto-refresh on session update** (`AppStore.swift`) — `rateLimitMonitor.refresh()` is now called automatically whenever the session monitor publishes new sessions, so plan-limit bars update without requiring a manual refresh or popover re-open.
+- **Account section removed** (`Views/SettingsView.swift`) — the Account section (sign-in, sign-out, sync toggle, `SignInSheet`) has been removed from Settings. Clears unused state variables and simplifies the settings panel.
+- **Feedback link updated** (`Views/SettingsView.swift`) — the "Open an issue" link now points to the correct `vatskyone/claux` GitHub repository.
+- **Refresh button label clarified** (`Views/SettingsView.swift`) — "Refresh sessions now" renamed to "Refresh sessions and plan limits" to reflect that both datasets are updated on tap.
+
 ## [1.15.0] — 2026-06-04
 
 ### New Features
