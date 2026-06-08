@@ -103,15 +103,18 @@ struct App {
     // Agents tab
     agents: Vec<AgentRun>,
     agent_cursor: usize,
+    agent_scroll: usize,
     agent_type_counts: HashMap<String, usize>,
     agent_counts_dirty: bool,
     // Skills tab
     skills: Vec<SkillInfo>,
     skill_cursor: usize,
+    skill_scroll: usize,
     skills_dirty: bool,
     // History tab
     checkpoints: Vec<Checkpoint>,
     checkpoint_cursor: usize,
+    checkpoint_scroll: usize,
     checkpoints_dirty: bool,
     cp_name_editing: bool,
     cp_name_buf: String,
@@ -140,13 +143,16 @@ impl App {
             detail_analysis: None,
             agents: vec![],
             agent_cursor: 0,
+            agent_scroll: 0,
             agent_type_counts: HashMap::new(),
             agent_counts_dirty: true,
             skills: vec![],
             skill_cursor: 0,
+            skill_scroll: 0,
             skills_dirty: true,
             checkpoints: vec![],
             checkpoint_cursor: 0,
+            checkpoint_scroll: 0,
             checkpoints_dirty: true,
             cp_name_editing: false,
             cp_name_buf: String::new(),
@@ -367,12 +373,15 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
             app.tab = app.tab.next();
             app.analytics_scroll = 0;
             if app.tab == Tab::Agents {
+                app.agent_scroll = 0;
                 app.reload_agents();
             }
             if app.tab == Tab::Skills && app.skills_dirty {
+                app.skill_scroll = 0;
                 app.reload_skills();
             }
             if app.tab == Tab::History && app.checkpoints_dirty {
+                app.checkpoint_scroll = 0;
                 app.reload_checkpoints();
             }
         }
@@ -380,12 +389,15 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
             app.tab = app.tab.prev();
             app.analytics_scroll = 0;
             if app.tab == Tab::Agents {
+                app.agent_scroll = 0;
                 app.reload_agents();
             }
             if app.tab == Tab::Skills && app.skills_dirty {
+                app.skill_scroll = 0;
                 app.reload_skills();
             }
             if app.tab == Tab::History && app.checkpoints_dirty {
+                app.checkpoint_scroll = 0;
                 app.reload_checkpoints();
             }
         }
@@ -407,16 +419,25 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
             Tab::Agents => {
                 if app.agent_cursor > 0 {
                     app.agent_cursor -= 1;
+                    if app.agent_cursor < app.agent_scroll {
+                        app.agent_scroll = app.agent_cursor;
+                    }
                 }
             }
             Tab::Skills => {
                 if app.skill_cursor > 0 {
                     app.skill_cursor -= 1;
+                    if app.skill_cursor < app.skill_scroll {
+                        app.skill_scroll = app.skill_cursor;
+                    }
                 }
             }
             Tab::History => {
                 if app.checkpoint_cursor > 0 {
                     app.checkpoint_cursor -= 1;
+                    if app.checkpoint_cursor < app.checkpoint_scroll {
+                        app.checkpoint_scroll = app.checkpoint_cursor;
+                    }
                 }
             }
             Tab::Dashboard => {}
@@ -439,18 +460,33 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers, viewport_h: usiz
                 let max = app.agents.len().saturating_sub(1);
                 if app.agent_cursor < max {
                     app.agent_cursor += 1;
+                    // ~38% of viewport minus borders/header
+                    let visible = (viewport_h * 38 / 100).saturating_sub(3).max(1);
+                    if app.agent_cursor >= app.agent_scroll + visible {
+                        app.agent_scroll = app.agent_cursor + 1 - visible;
+                    }
                 }
             }
             Tab::Skills => {
                 let max = app.skills.len().saturating_sub(1);
                 if app.skill_cursor < max {
                     app.skill_cursor += 1;
+                    // ~40% of viewport minus borders/header
+                    let visible = (viewport_h * 40 / 100).saturating_sub(3).max(1);
+                    if app.skill_cursor >= app.skill_scroll + visible {
+                        app.skill_scroll = app.skill_cursor + 1 - visible;
+                    }
                 }
             }
             Tab::History => {
                 let max = app.checkpoints.len().saturating_sub(1);
                 if app.checkpoint_cursor < max {
                     app.checkpoint_cursor += 1;
+                    // ~40% of viewport minus borders/header
+                    let visible = (viewport_h * 40 / 100).saturating_sub(3).max(1);
+                    if app.checkpoint_cursor >= app.checkpoint_scroll + visible {
+                        app.checkpoint_scroll = app.checkpoint_cursor + 1 - visible;
+                    }
                 }
             }
             Tab::Dashboard => {}
@@ -770,9 +806,11 @@ fn draw_agent_list(f: &mut Frame, area: Rect, app: &App) {
     ];
 
     let max_rows = inner.height as usize;
+    let scroll = app.agent_scroll;
     let rows: Vec<Row> = agents
         .iter()
         .enumerate()
+        .skip(scroll)
         .take(max_rows)
         .map(|(idx, agent)| {
             let is_selected = idx == app.agent_cursor;
@@ -2780,9 +2818,11 @@ fn draw_skill_list(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(6),
     ];
 
+    let scroll = app.skill_scroll;
     let rows: Vec<Row> = skills
         .iter()
         .enumerate()
+        .skip(scroll)
         .take(inner.height as usize)
         .map(|(idx, skill)| {
             let is_selected = idx == app.skill_cursor;
@@ -3145,9 +3185,11 @@ fn draw_checkpoint_list(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(6),
     ];
 
+    let scroll = app.checkpoint_scroll;
     let rows: Vec<Row> = cps
         .iter()
         .enumerate()
+        .skip(scroll)
         .take(list_height)
         .map(|(idx, cp)| {
             let is_sel = idx == app.checkpoint_cursor;

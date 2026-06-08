@@ -2,6 +2,12 @@
 
 ---
 
+## [0.7.4] — 2026-06-08
+
+### TUI
+
+- Fixed scrolling in the Sessions, Agents, Skills, and History tabs: the selected row now always stays visible when navigating past the bottom of the visible area. Agents, Skills, and History previously had a cursor but no scroll offset, so items beyond the first screenful were unreachable.
+
 ## [0.7.3] — 2026-06-08
 
 ### Reliability
