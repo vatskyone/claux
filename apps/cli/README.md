@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?style=flat-square" />
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/version-0.7.2-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-0.7.4-informational?style=flat-square" />
 </p>
 
 ---
@@ -14,13 +14,9 @@
 
 Claude Code bills per token. When you run long agentic sessions across multiple projects, the cost compounds quickly — and Claude Code's own interface gives you no aggregate view, no historical chart, and no session history.
 
-**claux is a terminal tool that reads Claude Code's local session logs and surfaces everything Claude Code doesn't.**
+**claux reads Claude Code's local session logs and surfaces everything Claude Code doesn't.**
 
 No account. No backend. No data ever leaves your machine. claux reads directly from `~/.claude/projects/` JSONL files and gives you a real-time TUI dashboard, spend summaries, session history, skill management, and full data export — all in your terminal.
-
----
-
-## The problem
 
 | Problem | Impact |
 |---|---|
@@ -39,8 +35,6 @@ No account. No backend. No data ever leaves your machine. claux reads directly f
 ```bash
 git clone https://github.com/vatskyone/claux.git
 cd claux/apps/cli
-
-# Build and install to ~/.cargo/bin/claux
 cargo install --path .
 ```
 
@@ -64,26 +58,38 @@ claux completions fish > ~/.config/fish/completions/claux.fish
 ## Quick start
 
 ```bash
-# See what's happening right now
-claux
-
-# Open the live TUI dashboard
-claux tui
-
-# How much have I spent?
-claux spend
-
-# Last 20 sessions
-claux sessions
+claux              # active session card
+claux tui          # live TUI dashboard
+claux spend        # how much have I spent?
+claux sessions     # last 20 sessions
+claux doctor       # diagnose session discovery
 ```
 
 ---
 
 ## Commands
 
+| Command | Description |
+|---|---|
+| `claux` / `claux status` | Active session card |
+| `claux sessions` | Recent session table |
+| `claux spend` | Today / week / month spend |
+| `claux analytics` | 30-day chart, project & model breakdowns |
+| `claux export` | Dump session history as JSON or CSV |
+| `claux tag` | Attach labels to sessions |
+| `claux account` | Account info + skill usage |
+| `claux skills` | Manage Claude Code skills |
+| `claux config` | Set budget limits and paths |
+| `claux claudemd` | Generate or improve a project CLAUDE.md |
+| `claux checkpoint` | Save and restore named project snapshots |
+| `claux doctor` | Diagnose session discovery and parse health |
+| `claux tui` | Full-screen live TUI dashboard |
+
+---
+
 ### `claux` / `claux status`
 
-Active session card — shows everything about the currently running Claude Code session.
+Active session card — cost, burn rate, context fill, cache hit grade, and CLAUDE.md quality for the currently running session.
 
 ```
   ● Active session
@@ -104,7 +110,7 @@ Flags: `--json`
 
 ### `claux sessions [-n N] [--json]`
 
-Colored table of recent sessions with status dot, relative time, duration, model, project path, cost, and tag.
+Colored table of recent sessions — status dot, relative time, duration, model, project path, cost, and tag.
 
 ```
  ●  just now   1h 14m  sonnet  /Users/snow/myproject   $0.84  [refactor]
@@ -132,11 +138,14 @@ Flags: `--json`
 
 ### `claux analytics [--days N] [--json]`
 
-30-day ASCII sparkline, daily spend table, breakdown by project, and breakdown by model with efficiency rating (K output tokens per dollar).
+30-day ASCII sparkline, daily spend table, breakdown by project and model (with efficiency rating — K output tokens per dollar), and a monthly cost forecast.
 
 ```
   Daily spend (30 days)
   ▁▁▂▃▁▂▄▇█▅▃▂▁▁▃▄▅▃▂▁▁▂▃▄▅▆▇█▅▃
+
+  Forecast
+  Daily avg (7d)  $0.61   Month to date  $8.20   Est. EOM  $18.30   Annual proj.  $222
 
   By Model
   claude-sonnet-4-6   $14.20   89K tok/$
@@ -145,13 +154,15 @@ Flags: `--json`
 
 Flags: `--days N` (default 30), `--json`
 
-Local-only product metrics:
+**Local-only product metrics:**
 
 ```bash
-claux analytics local
-claux analytics local --json
-claux analytics local --reset
+claux analytics local          # view on-device usage counters
+claux analytics local --json   # machine-readable
+claux analytics local --reset  # clear all counters
 ```
+
+Metrics are stored in `~/.claude/claux/local_metrics.json` and never leave your machine. They track command usage counts, failure classes, empty-state frequency, and TUI refresh latency.
 
 ---
 
@@ -189,27 +200,18 @@ Tags persist in `~/.claude/claux/tags.json`. The session ID prefix only needs to
 Account card reading your plan, billing, and org info from `~/.claude.json`, plus a skill usage table ranked by rating.
 
 ```
-  Account
-
   Name:             Snow
-  Email:            snow@example.com
   Plan:             Claude Pro
   Organization:     Personal
-  Role:             admin
   Billing:          stripe_subscription
-  Rate tier:        default_claude_ai
   Account since:    2024-03-15
-  Subscribed since: 2024-03-15
-  Extra usage:      enabled
 
   Skills
-
   ┌─────────────────┬──────┬───────────┬─────────┐
   │ Skill           │ Uses │ Last used │ Rating  │
   ├─────────────────┼──────┼───────────┼─────────┤
   │ run             │  42  │ 2h ago    │ ★★★★★  │
   │ code-review     │  18  │ 1d ago    │ ★★★★☆  │
-  │ ultrareview     │   3  │ 5d ago    │ ★★★☆☆  │
   └─────────────────┴──────┴───────────┴─────────┘
 ```
 
@@ -217,7 +219,7 @@ Account card reading your plan, billing, and org info from `~/.claude.json`, plu
 
 ### `claux skills`
 
-Manage Claude Code skills — both built-in skills (tracked via usage stats) and custom skills in `~/.claude/skills/`.
+Manage Claude Code skills — built-in skills (tracked via usage stats) and custom skills in `~/.claude/skills/`.
 
 ```bash
 claux skills list                      # table of all skills with ratings
@@ -241,31 +243,68 @@ Skill ratings (1–5 stars) based on total invocations:
 
 ### `claux config`
 
-Set budget limits stored in `~/.claude/claux/config.json`.
+Set budget limits and data source paths, stored in `~/.claude/claux/config.json`.
 
 ```bash
-claux config init                       # initialize defaults and source paths
-claux config set weekly-budget 50     # set $50/week budget
-claux config set plan-5h-limit 10     # set $10 / 5h usage limit
-claux config set monthly-credit 200   # set $200/month credit cap
+claux config init                        # guided setup wizard
+claux config set weekly-budget 50        # $50/week budget
+claux config set plan-5h-limit 10        # $10 per 5-hour usage window
+claux config set monthly-credit 200      # $200/month credit cap
 claux config set projects-root ~/.claude/projects
 claux config set sessions-root ~/.claude/sessions
-claux config get weekly-budget        # → 50.0
-claux config unset weekly-budget      # remove the limit
+claux config get weekly-budget           # → 50.0
+claux config unset weekly-budget         # remove the limit
 ```
 
-Valid keys:
-- `weekly-budget`
-- `plan-5h-limit`
-- `monthly-credit`
-- `projects-root`
-- `sessions-root`
+Valid keys: `weekly-budget` · `plan-5h-limit` · `monthly-credit` · `projects-root` · `sessions-root`
+
+Setting `plan-5h-limit` or `weekly-budget` enables the corresponding progress bars in the TUI Usage panel.
+
+---
+
+### `claux claudemd`
+
+Generate a new `CLAUDE.md` from scratch, or improve an existing one without overwriting your content.
+
+```bash
+# Generate a starter CLAUDE.md from repo structure
+claux claudemd generate --project /path/to/repo
+claux claudemd generate --project /path/to/repo --write
+claux claudemd generate --project /path/to/repo --write --force
+
+# Fill gaps in an existing CLAUDE.md, preserving everything already there
+claux claudemd improve --project /path/to/repo
+claux claudemd improve --project /path/to/repo --write
+claux claudemd improve --project /path/to/repo --write --backup
+```
+
+Both subcommands support `--json`. `improve` requires an existing `CLAUDE.md`; `generate --force` overwrites without prompting.
+
+---
+
+### `claux checkpoint`
+
+Save named snapshots of a project at a point in time. Each checkpoint records git state, session cost, and CLAUDE.md quality. Checkpoints are stored both locally (`~/.claude/claux/checkpoints/<project-hash>.json`) and inside the project (`.claux/checkpoints.json`) so they can be committed and shared.
+
+```bash
+claux checkpoint save                        # prompt for a name, then save
+claux checkpoint save "before auth refactor"
+
+claux checkpoint list                        # table of checkpoints for current project
+
+claux checkpoint load <id>                   # print checkpoint context as Markdown
+claux checkpoint load <id> --write           # also write .claux/CONTEXT.md
+
+claux checkpoint delete <id>                 # remove a checkpoint
+```
+
+`--write` produces `.claux/CONTEXT.md` — a structured file agents can read at session start to resume with full context: git branch, commit, cost, changed files, and CLAUDE.md score.
 
 ---
 
 ### `claux doctor [--json]`
 
-Read-only diagnostics for session discovery and parse health.
+Read-only diagnostics for session discovery and parse health. Reports source directory validity, active session count, and per-file parse health (`ok/failed/total`) with actionable remediation hints.
 
 ```bash
 claux doctor
@@ -274,64 +313,21 @@ claux doctor --json
 
 ---
 
-### `claux claudemd`
+## TUI — `claux tui`
 
-Generate or improve a project-level `CLAUDE.md`.
-
-```bash
-claux claudemd generate --project /path/to/repo
-claux claudemd generate --project /path/to/repo --write
-claux claudemd generate --project /path/to/repo --write --force
-
-claux claudemd improve --project /path/to/repo
-claux claudemd improve --project /path/to/repo --write
-claux claudemd improve --project /path/to/repo --write --backup
-```
-
-Notes:
-- `generate` creates a starter file from local repository structure and command conventions.
-- `improve` requires an existing `CLAUDE.md` and fills missing high-signal sections while preserving existing content.
-- Both subcommands support `--json` for machine-readable output.
-
----
-
-### `claux checkpoint`
-
-Save and restore named project checkpoints. Each checkpoint records git state, session cost, and CLAUDE.md quality at a point in time. Checkpoints are stored both locally (`~/.claude/claux/checkpoints/<project-hash>.json`) and inside the project (`.claux/checkpoints.json`) so they can be committed and shared with the repo.
-
-```bash
-claux checkpoint save                      # prompt for a name, then save
-claux checkpoint save "before auth refactor"
-
-claux checkpoint list                      # table of all checkpoints for current project
-
-claux checkpoint load <id>                 # print checkpoint context as Markdown to stdout
-claux checkpoint load <id> --write         # also write .claux/CONTEXT.md into the project
-
-claux checkpoint delete <id>               # remove a checkpoint
-```
-
-The `--write` flag produces a structured `.claux/CONTEXT.md` that agents can load at session start to resume with full context: git branch, commit, cost, changed files, and CLAUDE.md score.
-
----
-
-### `claux tui`
-
-Full-screen ratatui TUI dashboard. Press `q` to quit, `←`/`→` (or `h`/`l`) to switch tabs, `r` to refresh.
+Full-screen ratatui dashboard. Six tabs navigated with `←` / `→` (or `h` / `l`); `r` to force refresh; `q` to quit.
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│  ● Dashboard   Sessions   Analytics   Agents   Skills  History │
-└────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│  ● Dashboard   Sessions   Analytics   Agents   Skills   History    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
-
-## TUI — tab by tab
 
 ### Dashboard tab
 
-Split into two columns. Left column has two panels stacked vertically:
+Two-column layout. Left column has two panels stacked:
 
 **Tokens panel** — horizontal bar chart per token type:
 ```
@@ -344,14 +340,17 @@ Thinking █░░░░░░░░░░░░░░░░░   2,000    2%
 Total 93,200 tokens · Cache hit 68%  Grade A
 ```
 
-**Usage panel** — context fill, weekly spend vs budget, credit status:
+**Usage panel** — context fill, 5-hour usage window, weekly spend, and credit status:
 ```
 Context window  ████████░░░░  42%  84k / 200k
-This week       ██░░░░░░░░░░  $3.42 / $50.00  resets Mon 2026-06-01
+Last 5h         ████░░░░░░░░  $4.20 / $10.00  resets in 1h 12m
+This week       ██░░░░░░░░░░  $3.42 / $50.00  resets Mon 2026-06-08
 Credit          enabled  $18.70 of $200.00 used
 ```
 
-Right column — **Insights panel** (updates every 5 s):
+Bars only appear when the corresponding budget is set via `claux config`.
+
+**Insights panel** (right column, updates every 5 s):
 ```
 Cache efficiency  A  68% — optimal
 Context health    ✓ Healthy  42% full
@@ -369,24 +368,25 @@ When no session is active, the panel shows lifetime stats: total sessions, total
 
 ### Sessions tab
 
-Scrollable list of all sessions. `↑`/`↓` (or `k`/`j`) to move; `Enter` to open the detail overlay; `c` to copy the project path to clipboard (macOS).
+Scrollable list of all sessions. `↑`/`↓` (or `k`/`j`) to move; `Enter` to open detail overlay; `c` to copy the project path to clipboard (macOS).
 
-**Session detail overlay** shows:
+**Session detail overlay:**
 - Project path, model badge, active/ended status
 - Cost, duration, burn rate, context fill %, cache hit %
 - Full token breakdown bars
 - **Source** — `VSCode Extension` / `Terminal CLI` / `Desktop App` / `JetBrains Plugin`
 - **CLAUDE.md breakdown** — score + bar + label + ✓/✗ per category (Build, Run, Tests, Structure, Conventions, Commands) + up to 4 actionable suggestions
 - Context gauge bar
-- Tag (press `t` inside the overlay to edit inline; `Enter` saves, `Esc` cancels)
+- Tag (`t` to edit inline; `Enter` saves, `Esc` cancels)
 
 ---
 
 ### Analytics tab
 
-- **7-day bar chart** — one proportional `█` column per day, today highlighted blue, per-day cost labels and day-of-week axis
+- **7-day bar chart** — proportional `█` column per day, today highlighted blue, per-day cost labels and day-of-week axis
 - **30-day sparkline** — compact trend line
-- **By Project / By Model tables** — side by side, model table includes `K tok/$` efficiency column
+- **Monthly forecast** — daily avg (7d), month-to-date, estimated EOM, annual projection
+- **By Project / By Model tables** — side by side; model table includes `K tok/$` efficiency column
 
 ---
 
@@ -394,14 +394,14 @@ Scrollable list of all sessions. `↑`/`↓` (or `k`/`j`) to move; `Enter` to op
 
 Monitors every sub-agent spawned by Claude Code in the active session.
 
-**Agent list** (top 38% of screen):
+**Agent list** (top 38%):
 ```
 ● Explore    Lv3 [████░░░░]  Find API endpoints in src/   ★★★★☆  $0.02  14s
 ✓ Plan       Lv2 [██░░░░░░]  Design auth refactor          ★★★★★  $0.08  42s
 ✗ general    Lv1 [░░░░░░░░]  Search for test helpers       ★★☆☆☆  $0.01   8s
 ```
 
-**Agent detail panel** (bottom 62%) — full prompt preview, token bars as % of parent session, output preview, quality label. Press `r` to refresh.
+**Agent detail panel** (bottom 62%) — full prompt preview, token bars as % of parent session, output preview, quality label. `r` to refresh.
 
 **XP / Level system** — cumulative across all sessions:
 
@@ -429,9 +429,9 @@ A green `●` dot on the Agents tab label means at least one agent is still runn
 
 ### Skills tab
 
-Skill list (top 40% of screen) + detail panel (bottom 60%).
+Skill list (top 40%) + detail panel (bottom 60%). `↑`/`↓` to navigate; `r` to refresh.
 
-**Skill list** — name, type (custom `●` / built-in `○`), uses, last used, rating stars. `↑`/`↓` to navigate; `r` to refresh.
+**Skill list** — name, type (custom `●` / built-in `○`), uses, last used, rating stars.
 
 **Skill detail** — description, usage count, last used timestamp, rating, and SKILL.md content preview for custom skills.
 
@@ -441,38 +441,66 @@ Skill list (top 40% of screen) + detail panel (bottom 60%).
 
 Browse, save, and restore named project checkpoints without leaving the TUI.
 
-**Checkpoint list** (top 40%) — columns: ID · Name · Saved date · Git branch · Total cost · Files changed since prior checkpoint.
+**Checkpoint list** (top 40%) — ID · Name · Saved date · Git branch · Total cost · Files changed since prior checkpoint.
 
 **Checkpoint detail** (bottom 60%) — name, date, branch + commit hash, cost breakdown, CLAUDE.md score, list of files changed since the prior checkpoint, and action hints.
 
-**Inline actions:**
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Navigate checkpoint list |
+| `s` | Save a new checkpoint — type a name, `Enter` confirms, `Esc` cancels |
+| `w` | Write `.claux/CONTEXT.md` into the project directory |
+| `d` | Delete selected checkpoint |
+
+Each checkpoint captures: git branch + commit, lifetime project cost, active session cost, session count, and CLAUDE.md score. The per-project copy at `.claux/checkpoints.json` is committable and travels with the repo.
+
+---
+
+## Keyboard reference
+
+### Global
 
 | Key | Action |
 |---|---|
-| `s` | Save a new checkpoint — type a name, `Enter` to confirm, `Esc` to cancel |
-| `w` | Write `.claux/CONTEXT.md` into the project directory (agent-loadable context file) |
-| `d` | Delete the selected checkpoint |
-| `↑` / `↓` | Navigate checkpoint list |
+| `←` / `→` or `h` / `l` | Switch tabs |
+| `r` | Force refresh |
+| `q` | Quit |
 
-Each checkpoint captures: git branch + commit, lifetime project cost, active session cost, session count, and CLAUDE.md score at the time of saving. The per-project copy at `.claux/checkpoints.json` is committable and travels with the repo.
+### Sessions tab
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` or `k` / `j` | Move cursor |
+| `Enter` | Open session detail |
+| `c` (in detail) | Copy project path to clipboard (macOS) |
+| `t` (in detail) | Edit tag inline |
+| `Esc` | Close detail overlay |
+
+### Agents / Skills / History tabs
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Move cursor |
+| `r` | Refresh list |
+| `s` (History) | Save new checkpoint |
+| `w` (History) | Write `.claux/CONTEXT.md` |
+| `d` (History) | Delete selected checkpoint |
 
 ---
 
 ## Configuration
 
-### Budget limits
+All limits are set via `claux config` and stored in `~/.claude/claux/config.json`:
 
-Set via `claux config`:
-- `plan-5h-limit` — enables the 5-hour usage bar in the Usage panel
-- `weekly-budget` — enables the weekly spend bar in the Usage panel
-- `monthly-credit` — enables the credit usage bar (requires `has_extra_usage` enabled on your account)
-- `projects-root` / `sessions-root` — override log discovery paths
+| Key | Effect |
+|---|---|
+| `plan-5h-limit` | Enables 5-hour usage bar in the Usage panel |
+| `weekly-budget` | Enables weekly spend bar in the Usage panel |
+| `monthly-credit` | Enables credit usage bar (requires `has_extra_usage` on your account) |
+| `projects-root` | Override session log discovery path |
+| `sessions-root` | Override active-session detection path |
 
-Stored in `~/.claude/claux/config.json`.
-
-### Session tags
-
-Stored in `~/.claude/claux/tags.json`. Survive across CLI updates — never stored inside Claude Code's own session files.
+Session tags are stored in `~/.claude/claux/tags.json` — they survive CLI updates and are never stored inside Claude Code's own session files.
 
 ---
 
@@ -482,7 +510,7 @@ Stored in `~/.claude/claux/tags.json`. Survive across CLI updates — never stor
 apps/cli/src/
 ├── main.rs           # CLI entry point · clap subcommand routing
 ├── models.rs         # ClaudeSession · TokenUsage · SpendSummary · AccountInfo
-│                     # ClaudemdAnalysis · SkillInfo · ClauxConfig · AgentRun
+│                     # ClaudemdAnalysis · SkillInfo · ClauxConfig · AgentRun · Checkpoint
 ├── parser.rs         # JSONL → ClaudeSession · per-model pricing
 │                     # score_claudemd() · score_claudemd_detailed() · find_claudemd_path()
 │                     # parse_agents() · two-pass tool_use/tool_result matching
@@ -494,20 +522,15 @@ apps/cli/src/
 ├── format.rs         # cost · tokens · duration · relative_time
 │                     # model_short_name · project_path helpers
 ├── render.rs         # comfy-table + owo-colors helpers
-│                     # make_table · active_dot · cost_colored · context_bar
-│                     # spend_sparkline · trend · model_colored
 ├── account.rs        # load_account_info() from ~/.claude.json
 │                     # load_skill_usage() from skillUsage block
-├── skills.rs         # load_skills() — merges disk + usage stats
-│                     # skill_rating() — uses → 1–5 star rating
+├── skills.rs         # load_skills() · skill_rating()
 ├── config.rs         # load_claux_config() / save_claux_config()
-│                     # backed by ~/.claude/claux/config.json
 ├── claudemd.rs       # CLAUDE.md generation/improvement helpers
 ├── checkpoints.rs    # checkpoint persistence + context writer
 ├── metrics.rs        # local-only usage metrics counters
 ├── usage.rs          # shared usage-window/progress state helpers
 ├── tags.rs           # load_tags() / save_tag()
-│                     # backed by ~/.claude/claux/tags.json
 └── commands/
     ├── status.rs     # claux status
     ├── sessions.rs   # claux sessions
@@ -543,15 +566,15 @@ draw_dashboard / draw_sessions_list / draw_analytics / draw_agents_screen / draw
 
 ### Key design decisions
 
-**Per-turn cost attribution** — Sessions that span midnight are attributed per-turn using the timestamp of each assistant response, not the session start time. `dailyCosts: HashMap<NaiveDate, f64>` in `ClaudeSession` stores cost keyed by local-timezone day. This makes today's spend figure accurate regardless of when a session started.
+**Per-turn cost attribution** — Sessions that span midnight are attributed per-turn using the timestamp of each assistant response, not the session start time. `dailyCosts: HashMap<NaiveDate, f64>` in `ClaudeSession` stores cost keyed by local-timezone day.
 
 **Incremental mtime cache** — `SessionCache` maps `PathBuf → (SystemTime, ClaudeSession)`. Only files whose modification time has changed are re-parsed on each refresh. In a large workspace with one active session, exactly one file is re-parsed per tick.
 
-**Active session detection** — Two signals combined with OR: (1) `~/.claude/sessions/<pid>.json` contains a `sessionId` matching the JSONL filename; (2) file mtime < 90 seconds. Handles both clean exits and crashed sessions.
+**Active session detection** — Two signals combined with OR: (1) `~/.claude/sessions/<pid>.json` contains a `sessionId` matching the JSONL filename; (2) file mtime < 90 seconds.
 
-**Sub-agent matching** — `parse_agents()` does a two-pass scan of the session JSONL: first pass collects all `tool_use` events with `name = "Agent"`, second pass matches each to its `tool_result` by `tool_use_id`. The agent's own JSONL file (in the `subagents/` companion directory) is then parsed for per-token breakdown. This keeps agent parsing fully offline and self-contained.
+**Sub-agent matching** — `parse_agents()` does a two-pass scan: first pass collects all `tool_use` events with `name = "Agent"`, second pass matches each to its `tool_result` by `tool_use_id`. The agent's own JSONL file (in the `subagents/` companion directory) is then parsed for per-token breakdown.
 
-**CLAUDE.md lazy analysis** — Full `ClaudemdAnalysis` (per-category breakdown, suggestions) is computed on demand when the session detail overlay opens, not during initial session load. It's cached in `App.detail_analysis` and recomputed only when a different session is selected.
+**CLAUDE.md lazy analysis** — Full `ClaudemdAnalysis` is computed on demand when the session detail overlay opens, not during initial session load. Cached in `App.detail_analysis` and recomputed only when a different session is selected.
 
 ---
 
@@ -564,51 +587,6 @@ draw_dashboard / draw_sessions_list / draw_analytics / draw_agents_screen / draw
 | claude-haiku-4.x | $0.80 / M | $4.00 / M | $0.08 / M | $1.00 / M |
 
 Model ID matching uses substring (`opus` / `sonnet` / `haiku`) so new model versions are picked up automatically.
-
----
-
-## Keyboard reference
-
-### Global
-
-| Key | Action |
-|---|---|
-| `←` / `→` or `h` / `l` | Switch tabs |
-| `q` | Quit |
-| `r` | Force refresh |
-
-### Sessions tab
-
-| Key | Action |
-|---|---|
-| `↑` / `↓` or `k` / `j` | Move cursor |
-| `Enter` | Open session detail |
-| `c` (in detail) | Copy project path to clipboard (macOS) |
-| `t` (in detail) | Edit tag inline |
-| `Esc` | Close detail overlay |
-
-### Agents tab
-
-| Key | Action |
-|---|---|
-| `↑` / `↓` | Move agent cursor |
-| `r` | Refresh agent list |
-
-### Skills tab
-
-| Key | Action |
-|---|---|
-| `↑` / `↓` | Move skill cursor |
-| `r` | Refresh skills |
-
-### History tab
-
-| Key | Action |
-|---|---|
-| `↑` / `↓` | Navigate checkpoints |
-| `s` | Save new checkpoint |
-| `w` | Write `.claux/CONTEXT.md` |
-| `d` | Delete selected checkpoint |
 
 ---
 
@@ -645,7 +623,7 @@ CARGO_TARGET_DIR=/tmp/claux_build cargo build
 # 4. Bump version in Cargo.toml (PATCH for fixes, MINOR for features)
 # 5. Add an entry to CHANGELOG.md
 # 6. Verify
-CARGO_TARGET_DIR=/tmp/claux_build cargo build  # must compile clean
+CARGO_TARGET_DIR=/tmp/claux_build cargo build
 cargo test
 
 # 7. Open a PR against main
@@ -661,7 +639,7 @@ Every PR must include a version bump and a CHANGELOG.md entry. No exceptions.
 claux/
 ├── apps/
 │   ├── cli/                    # This crate (Rust)
-│   │   ├── src/                # All Rust source files
+│   │   ├── src/
 │   │   ├── Cargo.toml
 │   │   ├── CHANGELOG.md
 │   │   └── README.md
