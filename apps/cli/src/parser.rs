@@ -457,7 +457,6 @@ pub fn parse_session(
     let mut first_time: Option<DateTime<Local>> = None;
     let mut last_time: Option<DateTime<Local>> = None;
     let mut valid_json_lines = 0usize;
-    let mut usage_entries = 0usize;
 
     for line in content.lines() {
         let line = line.trim();
@@ -509,7 +508,6 @@ pub fn parse_session(
                 }
 
                 if let Some(usage) = msg.get("usage") {
-                    usage_entries += 1;
                     let inp = usage
                         .get("input_tokens")
                         .and_then(Value::as_u64)
@@ -567,9 +565,6 @@ pub fn parse_session(
 
     if valid_json_lines == 0 {
         anyhow::bail!("session log has no valid JSON lines");
-    }
-    if usage_entries == 0 {
-        anyhow::bail!("session log has no assistant usage entries");
     }
 
     let start_time = first_time.unwrap_or_else(Local::now);

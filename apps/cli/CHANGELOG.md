@@ -2,6 +2,12 @@
 
 ---
 
+## [0.7.3] — 2026-06-08
+
+### Reliability
+
+- Fixed a spurious parse warning for sessions that have valid JSON but no completed assistant turns (e.g., sessions cancelled before a response). These now parse as zero-cost entries instead of emitting `warn: session log has no assistant usage entries`.
+
 ## [0.7.2] — 2026-06-01
 
 ### CLAUDE.md workflow
