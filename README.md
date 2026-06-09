@@ -355,4 +355,5 @@ claux/
   Built with Swift + Rust · Designed for macOS · Zero dependencies · Zero backend
   <br />
   <a href="https://github.com/vatskyone/claux">github.com/vatskyone/claux</a>
+  <a href="https://buymeacoffee.com/vatskyone">buy me a coffee</a>
 </p>
