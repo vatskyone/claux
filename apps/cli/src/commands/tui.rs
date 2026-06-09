@@ -2621,17 +2621,13 @@ fn draw_usage_panel(
     let state_5h = five_hour_state(all, now, config.plan_5h_limit_usd, has_active);
     let state_week = weekly_state(all, now, config.weekly_budget_usd);
 
-    if let Some(limit) = state_5h.limit {
+    // 5-hour window row
+    if let Some(_limit) = state_5h.limit {
         let frac = state_5h.fraction;
         let filled = (frac * bar_w as f64).round() as usize;
         let empty = bar_w.saturating_sub(filled);
-        let col = if frac >= 0.9 {
-            Color::Red
-        } else if frac >= 0.7 {
-            Color::Yellow
-        } else {
-            Color::Green
-        };
+        let col = usage_color(frac);
+        let pct = (frac * 100.0).round() as u64;
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {:<12} ", state_5h.label),
@@ -2640,8 +2636,8 @@ fn draw_usage_panel(
             Span::styled("█".repeat(filled), Style::default().fg(col)),
             Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("  {} / ${:.0}", format::cost(state_5h.current), limit),
-                Style::default().fg(Color::DarkGray),
+                format!("  {:>3}%", pct),
+                Style::default().fg(col).add_modifier(Modifier::BOLD),
             ),
         ]));
     } else {
@@ -2663,23 +2659,21 @@ fn draw_usage_panel(
         ]));
     }
     if let Some(reset_at) = state_5h.reset_at {
+        let countdown = format_time_until(reset_at, now);
+        let absolute = reset_at.format("%H:%M").to_string();
         lines.push(Line::from(vec![Span::styled(
-            format!("               resets {}", reset_at.format("%H:%M")),
+            format!("               resets in {} · {}", countdown, absolute),
             Style::default().fg(Color::DarkGray),
         )]));
     }
 
-    if let Some(limit) = state_week.limit {
+    // 7-day window row
+    if let Some(_limit) = state_week.limit {
         let frac = state_week.fraction;
         let filled = (frac * bar_w as f64).round() as usize;
         let empty = bar_w.saturating_sub(filled);
-        let col = if frac >= 0.9 {
-            Color::Red
-        } else if frac >= 0.7 {
-            Color::Yellow
-        } else {
-            Color::Green
-        };
+        let col = usage_color(frac);
+        let pct = (frac * 100.0).round() as u64;
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {:<12} ", state_week.label),
@@ -2688,8 +2682,8 @@ fn draw_usage_panel(
             Span::styled("█".repeat(filled), Style::default().fg(col)),
             Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("  {}  / ${:.0}", format::cost(state_week.current), limit),
-                Style::default().fg(Color::DarkGray),
+                format!("  {:>3}%", pct),
+                Style::default().fg(col).add_modifier(Modifier::BOLD),
             ),
         ]));
     } else {
@@ -2711,8 +2705,10 @@ fn draw_usage_panel(
         ]));
     }
     if let Some(reset_at) = state_week.reset_at {
+        let countdown = format_time_until(reset_at, now);
+        let absolute = reset_at.format("%d %b %H:%M").to_string();
         lines.push(Line::from(vec![Span::styled(
-            format!("               resets {}", reset_at.format("Mon %Y-%m-%d")),
+            format!("               resets in {} · {}", countdown, absolute),
             Style::default().fg(Color::DarkGray),
         )]));
     }
@@ -3021,6 +3017,28 @@ fn draw_skill_detail(f: &mut Frame, area: Rect, app: &App) {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+fn usage_color(frac: f64) -> Color {
+    if frac >= 0.9 {
+        Color::Red
+    } else if frac >= 0.7 {
+        Color::Yellow
+    } else {
+        Color::Green
+    }
+}
+
+fn format_time_until(target: chrono::DateTime<Local>, now: chrono::DateTime<Local>) -> String {
+    let secs = (target - now).num_seconds().max(0);
+    let days = secs / 86_400;
+    let hours = (secs % 86_400) / 3_600;
+    let mins = (secs % 3_600) / 60;
+    if days > 0 {
+        format!("{}d {}h", days, hours)
+    } else {
+        format!("{}h {}m", hours, mins)
+    }
+}
 
 fn model_color_for(model: &str) -> Color {
     let l = model.to_lowercase();

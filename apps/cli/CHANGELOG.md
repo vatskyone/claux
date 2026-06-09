@@ -2,6 +2,12 @@
 
 ---
 
+## [0.7.5] — 2026-06-09
+
+### TUI
+
+- Dashboard usage panel now shows 5-hour and 7-day limit progress as a percentage (matching the menu bar app style), with reset countdown in `Xh Ym · HH:MM` / `Xd Yh · DD Mon HH:MM` format instead of a bare clock time.
+
 ## [0.7.4] — 2026-06-08
 
 ### TUI
