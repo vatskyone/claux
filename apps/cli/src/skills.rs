@@ -20,22 +20,33 @@ pub fn load_skills() -> Vec<SkillInfo> {
         });
     }
 
-    // Walk ~/.claude/skills/ for custom (user-defined) skills
+    // Walk ~/.claude/skills/ for custom (user-defined) skills.
+    // Supports both flat files (<name>.md) and subdirectories (<name>/SKILL.md).
     if let Some(skills_dir) = dirs::home_dir().map(|h| h.join(".claude").join("skills")) {
         if skills_dir.is_dir() {
             if let Ok(entries) = fs::read_dir(&skills_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if !path.is_dir() {
+                    let (name, content) = if path.is_dir() {
+                        let skill_md = path.join("SKILL.md");
+                        if !skill_md.exists() {
+                            continue;
+                        }
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        (name, fs::read_to_string(&skill_md).ok())
+                    } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                        let name = path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        (name, fs::read_to_string(&path).ok())
+                    } else {
                         continue;
-                    }
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let skill_md = path.join("SKILL.md");
-                    if !skill_md.exists() {
-                        continue;
-                    }
+                    };
 
-                    let content = fs::read_to_string(&skill_md).ok();
                     let description = content
                         .as_deref()
                         .and_then(|c| {

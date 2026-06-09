@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?style=flat-square" />
   <img src="https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/version-0.7.6-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-0.7.7-informational?style=flat-square" />
 </p>
 
 ---

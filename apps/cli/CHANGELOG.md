@@ -2,6 +2,12 @@
 
 ---
 
+## [0.7.7] — 2026-06-09
+
+### TUI
+
+- Skills tab now loads flat `~/.claude/skills/<name>.md` files in addition to the previous `~/.claude/skills/<name>/SKILL.md` subdirectory format, so all custom skills appear correctly.
+
 ## [0.7.6] — 2026-06-09
 
 ### TUI
