@@ -22,12 +22,12 @@ use crate::account::load_account_info;
 use crate::checkpoints::{
     delete_checkpoint, infer_project_path, load_checkpoints, save_checkpoint, write_context_md,
 };
-use crate::config::load_claux_config;
+use crate::config::{load_claux_config, load_rate_limits};
 use crate::format;
 use crate::metrics::{record_empty_state, record_refresh_latency};
 use crate::models::{
     agent_level, AccountInfo, AgentRun, Checkpoint, ClaudeSession, ClaudemdAnalysis, ClauxConfig,
-    SkillInfo,
+    RateLimitsSnapshot, SkillInfo,
 };
 use crate::monitor::{
     compute_agent_type_counts, load_agents_for_session, load_sessions, SessionCache,
@@ -39,7 +39,7 @@ use crate::spend::{
     compute_project_breakdown, compute_spend,
 };
 use crate::tags;
-use crate::usage::{five_hour_state, weekly_state, ProgressReason};
+use crate::usage::{five_hour_state, weekly_state};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -124,6 +124,7 @@ struct App {
     // Account / config (loaded once)
     account_info: Option<AccountInfo>,
     claux_config: ClauxConfig,
+    rate_limits: Option<RateLimitsSnapshot>,
     // Shared data
     sessions: Vec<ClaudeSession>,
     cache: SessionCache,
@@ -160,6 +161,7 @@ impl App {
             tag_input_buf: String::new(),
             account_info: load_account_info(),
             claux_config: load_claux_config(),
+            rate_limits: load_rate_limits(),
             sessions,
             cache,
             last_refresh: Instant::now(),
@@ -186,6 +188,7 @@ impl App {
         if self.tab == Tab::History {
             self.reload_checkpoints();
         }
+        self.rate_limits = load_rate_limits();
         self.last_refresh = Instant::now();
         record_refresh_latency(started.elapsed());
     }
@@ -657,6 +660,7 @@ fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
         &app.sessions,
         &app.claux_config,
         app.account_info.as_ref(),
+        app.rate_limits.as_ref(),
     );
     draw_insights_panel(f, mid[1], active, &app.sessions);
 
@@ -2576,6 +2580,7 @@ fn draw_usage_panel(
     all: &[ClaudeSession],
     config: &ClauxConfig,
     account: Option<&AccountInfo>,
+    rate_limits: Option<&RateLimitsSnapshot>,
 ) {
     let block = Block::default()
         .title(" Usage ")
@@ -2617,121 +2622,144 @@ fn draw_usage_panel(
 
     let now = Local::now();
     let today = now.date_naive();
-    let has_active = session.is_some();
-    let state_5h = five_hour_state(all, now, config.plan_5h_limit_usd, has_active);
-    let state_week = weekly_state(all, now, config.weekly_budget_usd);
+
+    // Prefer the statusLine snapshot from rate_limits.json; fall back to log-computed values.
+    let snap_5h = rate_limits.and_then(|r| r.five_hour.as_ref());
+    let snap_7d = rate_limits.and_then(|r| r.seven_day.as_ref());
 
     // 5-hour window row
-    if let Some(_limit) = state_5h.limit {
-        let frac = state_5h.fraction;
+    if let Some(w) = snap_5h {
+        let pct = w.used_percentage.unwrap_or(0.0);
+        let frac = (pct / 100.0).clamp(0.0, 1.0);
         let filled = (frac * bar_w as f64).round() as usize;
         let empty = bar_w.saturating_sub(filled);
         let col = usage_color(frac);
-        let pct = (frac * 100.0).round() as u64;
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {:<12} ", state_5h.label),
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("  5h window    ", Style::default().fg(Color::DarkGray)),
             Span::styled("█".repeat(filled), Style::default().fg(col)),
             Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("  {:>3}%", pct),
+                format!("  {:>3.0}%", pct),
                 Style::default().fg(col).add_modifier(Modifier::BOLD),
             ),
         ]));
+        if let Some(ts) = w.resets_at {
+            use chrono::TimeZone;
+            if let chrono::LocalResult::Single(reset_at) = Local.timestamp_opt(ts, 0) {
+                let countdown = format_time_until(reset_at, now);
+                let absolute = reset_at.format("%H:%M").to_string();
+                lines.push(Line::from(vec![Span::styled(
+                    format!("               resets in {} · {}", countdown, absolute),
+                    Style::default().fg(Color::DarkGray),
+                )]));
+            }
+        }
     } else {
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {:<12} ", state_5h.label),
+        let has_active = session.is_some();
+        let state_5h = five_hour_state(all, now, config.plan_5h_limit_usd, has_active);
+        if let Some(_limit) = state_5h.limit {
+            let frac = state_5h.fraction;
+            let filled = (frac * bar_w as f64).round() as usize;
+            let empty = bar_w.saturating_sub(filled);
+            let col = usage_color(frac);
+            let pct = (frac * 100.0).round() as u64;
+            lines.push(Line::from(vec![
+                Span::styled("  5h window    ", Style::default().fg(Color::DarkGray)),
+                Span::styled("█".repeat(filled), Style::default().fg(col)),
+                Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {:>3}%", pct),
+                    Style::default().fg(col).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("  5h window    ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format::cost(state_5h.current),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  (no snapshot — set plan-5h-limit in claux config)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+        if let Some(reset_at) = state_5h.reset_at {
+            let countdown = format_time_until(reset_at, now);
+            let absolute = reset_at.format("%H:%M").to_string();
+            lines.push(Line::from(vec![Span::styled(
+                format!("               resets in {} · {}", countdown, absolute),
                 Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format::cost(state_5h.current),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "  (limit unset — claux config set plan-5h-limit N)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
-    }
-    if let Some(reset_at) = state_5h.reset_at {
-        let countdown = format_time_until(reset_at, now);
-        let absolute = reset_at.format("%H:%M").to_string();
-        lines.push(Line::from(vec![Span::styled(
-            format!("               resets in {} · {}", countdown, absolute),
-            Style::default().fg(Color::DarkGray),
-        )]));
+            )]));
+        }
     }
 
     // 7-day window row
-    if let Some(_limit) = state_week.limit {
-        let frac = state_week.fraction;
+    if let Some(w) = snap_7d {
+        let pct = w.used_percentage.unwrap_or(0.0);
+        let frac = (pct / 100.0).clamp(0.0, 1.0);
         let filled = (frac * bar_w as f64).round() as usize;
         let empty = bar_w.saturating_sub(filled);
         let col = usage_color(frac);
-        let pct = (frac * 100.0).round() as u64;
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {:<12} ", state_week.label),
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("  7d window    ", Style::default().fg(Color::DarkGray)),
             Span::styled("█".repeat(filled), Style::default().fg(col)),
             Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("  {:>3}%", pct),
+                format!("  {:>3.0}%", pct),
                 Style::default().fg(col).add_modifier(Modifier::BOLD),
             ),
         ]));
+        if let Some(ts) = w.resets_at {
+            use chrono::TimeZone;
+            if let chrono::LocalResult::Single(reset_at) = Local.timestamp_opt(ts, 0) {
+                let countdown = format_time_until(reset_at, now);
+                let absolute = reset_at.format("%d %b %H:%M").to_string();
+                lines.push(Line::from(vec![Span::styled(
+                    format!("               resets in {} · {}", countdown, absolute),
+                    Style::default().fg(Color::DarkGray),
+                )]));
+            }
+        }
     } else {
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {:<12} ", state_week.label),
+        let state_week = weekly_state(all, now, config.weekly_budget_usd);
+        if let Some(_limit) = state_week.limit {
+            let frac = state_week.fraction;
+            let filled = (frac * bar_w as f64).round() as usize;
+            let empty = bar_w.saturating_sub(filled);
+            let col = usage_color(frac);
+            let pct = (frac * 100.0).round() as u64;
+            lines.push(Line::from(vec![
+                Span::styled("  7d window    ", Style::default().fg(Color::DarkGray)),
+                Span::styled("█".repeat(filled), Style::default().fg(col)),
+                Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {:>3}%", pct),
+                    Style::default().fg(col).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("  7d window    ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format::cost(state_week.current),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  (no snapshot — set weekly-budget in claux config)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+        if let Some(reset_at) = state_week.reset_at {
+            let countdown = format_time_until(reset_at, now);
+            let absolute = reset_at.format("%d %b %H:%M").to_string();
+            lines.push(Line::from(vec![Span::styled(
+                format!("               resets in {} · {}", countdown, absolute),
                 Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format::cost(state_week.current),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "  (limit unset — claux config set weekly-budget N)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
-    }
-    if let Some(reset_at) = state_week.reset_at {
-        let countdown = format_time_until(reset_at, now);
-        let absolute = reset_at.format("%d %b %H:%M").to_string();
-        lines.push(Line::from(vec![Span::styled(
-            format!("               resets in {} · {}", countdown, absolute),
-            Style::default().fg(Color::DarkGray),
-        )]));
-    }
-
-    if matches!(state_5h.reason, Some(ProgressReason::SourceUnavailable))
-        || matches!(state_week.reason, Some(ProgressReason::SourceUnavailable))
-    {
-        lines.push(Line::from(Span::styled(
-            "  Status       source unavailable or no logs found",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else if matches!(state_5h.reason, Some(ProgressReason::NoDataYet))
-        || matches!(state_week.reason, Some(ProgressReason::NoDataYet))
-    {
-        lines.push(Line::from(Span::styled(
-            "  Status       no data yet in current windows",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else if matches!(state_5h.reason, Some(ProgressReason::NoActiveSession)) {
-        lines.push(Line::from(Span::styled(
-            "  Status       no active session (bars based on recent logs)",
-            Style::default().fg(Color::DarkGray),
-        )));
+            )]));
+        }
     }
 
     // Credit status

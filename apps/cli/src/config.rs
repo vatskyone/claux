@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::models::ClauxConfig;
+use crate::models::{ClauxConfig, RateLimitsSnapshot};
 
 fn config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("claux").join("config.json"))
@@ -42,6 +42,12 @@ pub fn load_claux_config() -> ClauxConfig {
         Err(_) => return ClauxConfig::default(),
     };
     serde_json::from_str(&content).unwrap_or_default()
+}
+
+pub fn load_rate_limits() -> Option<RateLimitsSnapshot> {
+    let path = dirs::home_dir()?.join(".claude").join("claux").join("rate_limits.json");
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 pub fn save_claux_config(cfg: &ClauxConfig) -> Result<()> {

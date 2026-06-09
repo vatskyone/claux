@@ -2,6 +2,12 @@
 
 ---
 
+## [0.7.6] — 2026-06-09
+
+### TUI
+
+- Usage panel now reads the authoritative `~/.claude/claux/rate_limits.json` snapshot written by the Claude Code statusLine, showing the real plan-limit percentages and reset times that match the menu bar app. Falls back to log-computed values if the snapshot is absent.
+
 ## [0.7.5] — 2026-06-09
 
 ### TUI

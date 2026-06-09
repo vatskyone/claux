@@ -231,6 +231,21 @@ pub struct SkillInfo {
     pub content: Option<String>,
 }
 
+// ── Rate-limits snapshot (written by Claude Code statusLine) ─────────────────
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RateLimitWindow {
+    pub used_percentage: Option<f64>,
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RateLimitsSnapshot {
+    pub five_hour: Option<RateLimitWindow>,
+    pub seven_day: Option<RateLimitWindow>,
+    pub updated_at: Option<i64>,
+}
+
 // ── User-configurable budget limits ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
