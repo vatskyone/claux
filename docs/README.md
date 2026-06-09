@@ -17,7 +17,7 @@ Claux ships as two independent tools that read the same local session logs:
 | **Form factor** | Native macOS menu bar app | Terminal commands + live TUI dashboard |
 | **Best for** | Passive ambient monitoring | Deep analysis, export, scripting |
 | **Language** | Swift / SwiftUI | Rust |
-| **Version** | 1.15.1 | 0.7.2 |
+| **Version** | 1.15.1 | 0.7.7 |
 | **Requirements** | macOS 13+ | macOS / Linux, Rust 1.78+ |
 
 Both tools are free. Neither requires an account or an internet connection to function.
