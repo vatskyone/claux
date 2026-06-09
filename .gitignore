@@ -41,5 +41,12 @@ apps/cli/target/
 # Claux local data (checkpoints, context snapshots with real cost/path data)
 .claux/
 
+# Internal / AI working files
+CLAUDE.md
+CLAUDE.md.bak
+RELEASE_DESCRIPTION.md
+plan.md
+*.skill
+
 # Misc
 *.log
