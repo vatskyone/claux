@@ -16,7 +16,7 @@ The Claux CLI is a terminal tool built in Rust that reads Claude Code's local se
 
 ## Current version
 
-**v0.7.2** — see the [changelog](https://github.com/vatskyone/claux/blob/main/apps/cli/CHANGELOG.md) for the full history.
+**v0.7.7** — see the [changelog](https://github.com/vatskyone/claux/blob/main/apps/cli/CHANGELOG.md) for the full history.
 
 ## Pages in this section
 
