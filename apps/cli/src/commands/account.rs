@@ -67,7 +67,7 @@ pub fn run() -> Result<()> {
             let last_str = last_ms
                 .map(|ms| relative_ms(ms))
                 .unwrap_or_else(|| "never".to_string());
-            let rating = stars(skill_rating(*count));
+            let rating = stars(skill_rating(*count, *last_ms));
             table.add_row(vec![
                 Cell::new(&name),
                 Cell::new(count.to_string()),

@@ -227,6 +227,7 @@ pub struct SkillInfo {
     pub description: Option<String>,
     pub usage_count: usize,
     pub last_used_ms: Option<u64>,
+    pub score: u8,
     pub rating: u8,
     pub content: Option<String>,
 }

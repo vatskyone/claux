@@ -2,6 +2,14 @@
 
 ---
 
+## [0.7.8] — 2026-06-10
+
+### TUI
+
+- Skills tab: never-used skills now display `N/A` instead of a star rating, keeping the rating meaningful from first use onwards.
+- Skills rating system replaced with a 100-point composite score: 60 pts for usage tier (scales across 1–2 / 3–9 / 10–29 / 30–99 / 100+ uses) plus 40 pts for recency (decays from last-7-days down to 0 after a year). Stars are derived proportionally from the score, so a heavily-used but long-stale skill no longer holds a high rating.
+- Skill detail panel now shows the raw score alongside the stars (e.g. `★★★☆☆  [55/100]`) for transparency.
+
 ## [0.7.7] — 2026-06-09
 
 ### TUI

@@ -2890,7 +2890,11 @@ fn draw_skill_list(f: &mut Frame, area: Rect, app: &App) {
                 Cell::from(skill.usage_count.to_string())
                     .style(Style::default().fg(Color::DarkGray)),
                 Cell::from(last).style(Style::default().fg(Color::DarkGray)),
-                Cell::from(stars(skill.rating)).style(quality_style(skill.rating)),
+                if skill.usage_count == 0 {
+                        Cell::from("N/A").style(Style::default().fg(Color::DarkGray))
+                    } else {
+                        Cell::from(stars(skill.rating)).style(quality_style(skill.rating))
+                    },
             ])
             .style(if is_selected {
                 Style::default().bg(Color::DarkGray)
@@ -3011,10 +3015,21 @@ fn draw_skill_detail(f: &mut Frame, area: Rect, app: &App) {
         Span::styled("   Last used  ", Style::default().fg(Color::DarkGray)),
         Span::styled(last_str, Style::default().fg(Color::White)),
     ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Rating    ", Style::default().fg(Color::DarkGray)),
-        Span::styled(stars(skill.rating), quality_style(skill.rating)),
-    ]));
+    lines.push(Line::from(if skill.usage_count == 0 {
+        vec![
+            Span::styled("  Rating    ", Style::default().fg(Color::DarkGray)),
+            Span::styled("N/A", Style::default().fg(Color::DarkGray)),
+        ]
+    } else {
+        vec![
+            Span::styled("  Rating    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(stars(skill.rating), quality_style(skill.rating)),
+            Span::styled(
+                format!("  [{}/100]", skill.score),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]
+    }));
     lines.push(Line::from(""));
 
     if skill.source == crate::models::SkillSource::Custom {
@@ -3107,6 +3122,7 @@ fn xp_bar(progress: f64, width: usize) -> String {
 
 fn quality_style(score: u8) -> Style {
     let color = match score {
+        0 => Color::DarkGray,
         5 => Color::Green,
         4 => Color::Cyan,
         3 => Color::Yellow,

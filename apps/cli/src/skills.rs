@@ -15,7 +15,8 @@ pub fn load_skills() -> Vec<SkillInfo> {
             description: None,
             usage_count: *count,
             last_used_ms: *last,
-            rating: skill_rating(*count),
+            score: skill_score(*count, *last),
+            rating: skill_rating(*count, *last),
             content: None,
         });
     }
@@ -71,7 +72,8 @@ pub fn load_skills() -> Vec<SkillInfo> {
                         description,
                         usage_count: count,
                         last_used_ms: last,
-                        rating: skill_rating(count),
+                        score: skill_score(count, last),
+                        rating: skill_rating(count, last),
                         content,
                     });
                 }
@@ -84,13 +86,43 @@ pub fn load_skills() -> Vec<SkillInfo> {
     skills
 }
 
-/// 1–5 star rating based on cumulative usage count.
-pub fn skill_rating(count: usize) -> u8 {
-    match count {
-        0 => 1,
-        1..=2 => 2,
-        3..=9 => 3,
-        10..=29 => 4,
-        _ => 5,
+/// 0–100 composite score: 60 pts for usage tier + 40 pts for recency.
+pub fn skill_score(count: usize, last_used_ms: Option<u64>) -> u8 {
+    if count == 0 {
+        return 0;
     }
+    let usage_pts: u32 = match count {
+        1..=2 => 15,
+        3..=9 => 30,
+        10..=29 => 45,
+        30..=99 => 55,
+        _ => 60,
+    };
+    let recency_pts: u32 = if let Some(last_ms) = last_used_ms {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let days = now_ms.saturating_sub(last_ms) / 86_400_000;
+        match days {
+            0..=6 => 40,
+            7..=29 => 30,
+            30..=89 => 20,
+            90..=179 => 10,
+            180..=364 => 5,
+            _ => 0,
+        }
+    } else {
+        0
+    };
+    (usage_pts + recency_pts).min(100) as u8
+}
+
+/// 0–5 star rating derived from the composite score.
+pub fn skill_rating(count: usize, last_used_ms: Option<u64>) -> u8 {
+    let score = skill_score(count, last_used_ms);
+    if score == 0 {
+        return 0;
+    }
+    ((score as f64 / 100.0 * 5.0).round() as u8).max(1).min(5)
 }
