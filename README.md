@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/swift-5.9-orange?style=flat-square&logo=swift" />
   <img src="https://img.shields.io/badge/rust-1.78%2B-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/desktop-v1.15.1-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/desktop-v1.16.0-informational?style=flat-square" />
   <img src="https://img.shields.io/badge/cli-v0.7.4-informational?style=flat-square" />
 </p>
 
@@ -34,7 +34,7 @@ Claux ships as two independent tools:
 |---|---|---|
 | **Runtime** | Native macOS menu bar app (Swift/SwiftUI) | Terminal TUI + subcommands (Rust) |
 | **Primary use** | Passive monitoring, alerts, quick glance | Deep analysis, export, automation, scripting |
-| **Version** | 1.15.1 | 0.7.4 |
+| **Version** | 1.16.0 | 0.7.4 |
 
 ---
 
@@ -100,7 +100,7 @@ All alerts use `UNUserNotificationCenter` and carry actions (Open Session / Open
 | State color palette | System / Vivid / High Contrast / Colorblind Safe / Soft Contrast |
 | Session retention | 7 / 14 / 30 / 60 / 90 days / Forever |
 | Monthly budget | Dollar amount ($0 = off) |
-| Auto-refresh interval | 5 / 10 / 30 / 60 s |
+| Auto-refresh interval | 1 / 5 / 10 / 30 / 60 s |
 | Launch at login | `SMAppService` |
 | Session directory | Custom `~/.claude` path |
 | Include cache cost | On/Off |

@@ -79,6 +79,23 @@ final class AppStore: ObservableObject {
         rateLimitMonitor.refresh()
     }
 
+    /// Clear in-memory session and usage data without touching settings.
+    func eraseSessionData() {
+        let trackingKeys: [String] = [
+            "notificationSnoozedDayKey", "weeklyRecapLastSentWeekKey",
+        ]
+        trackingKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        activeSession    = nil
+        recentSessions   = []
+        spendSummary     = .zero
+        dailySpend       = []
+        projectBreakdown = []
+        modelBreakdown   = []
+        monitor.invalidateCache()
+        monitor.refresh()
+        rateLimitMonitor.refresh()
+    }
+
     func dailyRecap(for day: Date = Date()) -> DailyRecap? {
         let calendar = Calendar.current
         let targetDay = calendar.startOfDay(for: day)

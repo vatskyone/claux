@@ -57,7 +57,7 @@ final class SessionMonitor: ObservableObject {
 
     private var refreshIntervalSeconds: TimeInterval {
         let configured = UserDefaults.standard.integer(forKey: "autoRefreshInterval")
-        let clamped = max(5, min(configured > 0 ? configured : 10, 300))
+        let clamped = max(1, min(configured > 0 ? configured : 10, 300))
         return TimeInterval(clamped)
     }
 

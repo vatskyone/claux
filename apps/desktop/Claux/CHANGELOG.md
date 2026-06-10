@@ -2,6 +2,17 @@
 
 ---
 
+## [1.16.0] — 2026-06-10
+
+### New Features
+- **Saturday & Sunday in weekly recap day picker** (`NotificationManager.swift`, `Views/SettingsView.swift`) — the "Weekly recap day" setting now includes Saturday and Sunday options in addition to the existing Monday–Friday choices.
+- **Hourly "Send at" options** (`Views/SettingsView.swift`) — the daily/weekly summary send-time picker now lists every hour of the day (12:00 am through 11:00 pm) instead of only four fixed slots.
+- **$100 cost alert tier** (`Views/SettingsView.swift`) — added a `$100` option to the cost alert threshold picker, between the existing `$50` and the top of the range.
+- **1 s auto-refresh option** (`Views/SettingsView.swift`, `SessionMonitor.swift`) — added a `1 s` option to the auto-refresh picker and lowered the minimum clamp in `SessionMonitor` from 5 s to 1 s so the preference is actually honoured.
+
+### Improvements
+- **"Erase All Data" preserves settings** (`AppStore.swift`, `Views/SettingsView.swift`) — the "Erase All Data…" button in Data Source now calls a new `eraseSessionData()` method that clears in-memory session arrays, the parse cache, and notification-tracking keys (`notificationSnoozedDayKey`, `weeklyRecapLastSentWeekKey`) without touching any user-configured settings. The confirmation copy and help text have been updated to reflect this. The "Reset all settings to default" footer button remains available for a full settings wipe.
+
 ## [1.15.1] — 2026-06-07
 
 ### Bug Fixes

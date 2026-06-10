@@ -104,6 +104,7 @@ struct SettingsView: View {
                 }
 
                 Picker("Auto-refresh", selection: $refreshInterval) {
+                    Text("1 s").tag(1)
                     Text("5 s").tag(5)
                     Text("10 s").tag(10)
                     Text("30 s").tag(30)
@@ -204,6 +205,7 @@ struct SettingsView: View {
                     Text("$10").tag(10.0)
                     Text("$20").tag(20.0)
                     Text("$50").tag(50.0)
+                    Text("$100").tag(100.0)
                 }
                 .help("Notify when a session exceeds this cost")
                 .disabled(!notificationsOn)
@@ -247,10 +249,9 @@ struct SettingsView: View {
 
                 if dailySummaryEnabled || weeklyRecapEnabled {
                     Picker("Send at", selection: $dailySummaryHour) {
-                        Text("12:00 pm").tag(12)
-                        Text("3:00 pm").tag(15)
-                        Text("6:00 pm").tag(18)
-                        Text("9:00 pm").tag(21)
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(hourLabel(hour)).tag(hour)
+                        }
                     }
                     .disabled(!notificationsOn)
                 }
@@ -364,7 +365,7 @@ struct SettingsView: View {
                 LabeledContent("Usage data") {
                     HStack(spacing: 8) {
                         if resetDone {
-                            Label("Reset!", systemImage: "checkmark.circle.fill")
+                            Label("Erased!", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                                 .font(.system(size: 12))
                                 .transition(.opacity)
@@ -377,7 +378,7 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                     }
                 }
-                .help("Reset all Claux settings to defaults. Your Claude session files are not deleted.")
+                .help("Clear all in-memory session and usage data. Your settings and Claude session files are not affected.")
 
             } header: {
                 Label("Data Source", systemImage: "folder")
@@ -455,8 +456,8 @@ struct SettingsView: View {
             isPresented: $showResetConfirm,
             titleVisibility: .visible
         ) {
-            Button("Erase All Settings", role: .destructive) {
-                store.resetAllData()
+            Button("Erase Sessions & Usage Data", role: .destructive) {
+                store.eraseSessionData()
                 withAnimation { resetDone = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     withAnimation { resetDone = false }
@@ -464,7 +465,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("All Claux settings will be reset to defaults. Your Claude session files are not affected.")
+            Text("All in-memory session and usage data will be cleared. Your settings and Claude session files are not affected.")
         }
 
     }
