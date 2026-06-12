@@ -239,7 +239,7 @@ final class ClauxStatusItemController: NSObject {
 
     private func makeMenuBarImage(isDark: Bool, isActive: Bool) -> NSImage {
         let pt: CGFloat = 17
-        let circleColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
+        let circleColor: NSColor = isDark ? .white : .black
         let letterColor: NSColor = isDark ? .black : .white
         let img = NSImage(size: NSSize(width: pt, height: pt), flipped: false) { rect in
             circleColor.setFill()
@@ -271,7 +271,7 @@ final class ClauxStatusItemController: NSObject {
         button.image = makeMenuBarImage(isDark: isDark, isActive: isActive)
         button.contentTintColor = nil
 
-        let textColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
+        let textColor: NSColor = isDark ? .white : .black
 
         var suffix: [String] = []
         if showCost {
