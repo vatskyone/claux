@@ -244,15 +244,10 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
-        // Explicit light/dark theme: use the app theme setting directly.
-        // Auto: fall back to the menu bar's own appearance (button.effectiveAppearance).
-        let appTheme = UserDefaults.standard.string(forKey: "appTheme") ?? "auto"
-        let isDark: Bool
-        switch appTheme {
-        case "dark":  isDark = true
-        case "light": isDark = false
-        default:      isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        }
+        // Read macOS system dark/light mode directly from NSGlobalDomain —
+        // unaffected by NSApp.appearance overrides set by the app theme picker.
+        let isDark = UserDefaults(suiteName: "NSGlobalDomain")?
+            .string(forKey: "AppleInterfaceStyle") == "Dark"
         let iconColor: NSColor = isDark ? .white : .black
 
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
