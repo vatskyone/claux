@@ -237,6 +237,26 @@ final class ClauxStatusItemController: NSObject {
         statusItem = nil
     }
 
+    private func makeMenuBarImage(isDark: Bool, isActive: Bool) -> NSImage {
+        let pt: CGFloat = 17
+        let circleColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
+        let letterColor: NSColor = isDark ? .black : .white
+        let img = NSImage(size: NSSize(width: pt, height: pt), flipped: false) { rect in
+            circleColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            let font = NSFont.systemFont(ofSize: pt * 0.57, weight: .semibold)
+            let s = NSAttributedString(string: "c", attributes: [
+                .font: font,
+                .foregroundColor: letterColor
+            ])
+            let sz = s.size()
+            s.draw(at: NSPoint(x: (pt - sz.width) / 2, y: (pt - sz.height) / 2 + 0.5))
+            return true
+        }
+        img.isTemplate = false
+        return img
+    }
+
     private func updateStatusButtonAppearance() {
         guard let button = statusItem?.button else { return }
 
@@ -244,16 +264,14 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
-        // Read the button's own effectiveAppearance — the menu bar has its own
-        // dark/light state independent of the app. This is the only reliable
-        // way to know whether the menu bar background is dark or light.
+        // button.effectiveAppearance reflects the menu bar's own dark/light state,
+        // which is independent of the app's theme setting.
         let isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let fgColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
 
-        let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
-        image?.isTemplate = true
-        button.image = image
-        button.contentTintColor = fgColor
+        button.image = makeMenuBarImage(isDark: isDark, isActive: isActive)
+        button.contentTintColor = nil
+
+        let textColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
 
         var suffix: [String] = []
         if showCost {
@@ -269,7 +287,7 @@ final class ClauxStatusItemController: NSObject {
         } else {
             button.attributedTitle = NSAttributedString(
                 string: " " + suffix.joined(separator: " "),
-                attributes: [.foregroundColor: fgColor]
+                attributes: [.foregroundColor: textColor]
             )
         }
         button.toolTip = isActive ? "Claux (active session)" : "Claux"
