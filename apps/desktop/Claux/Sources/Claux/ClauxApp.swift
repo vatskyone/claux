@@ -253,7 +253,7 @@ final class ClauxStatusItemController: NSObject {
             // Use capHeight (not bounding box height) so the visible letter
             // is visually centred in the circle rather than sitting low.
             let x = (pt - sz.width) / 2
-            let y = (pt - font.capHeight) / 2
+            let y = (pt - font.capHeight) / 2 - 1.0
             s.draw(at: NSPoint(x: x, y: y))
             return true
         }
