@@ -4,7 +4,7 @@ import AppKit
 // MARK: – App version (single source of truth)
 // Update this every time a file is modified or created, then add an entry to CHANGELOG.md.
 enum AppVersion {
-    static let current = "1.16.1"
+    static let current = "1.16.2"
 }
 
 enum StateColorPreset: String, CaseIterable, Identifiable {

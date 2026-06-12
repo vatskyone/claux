@@ -156,18 +156,6 @@ final class ClauxStatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
-        // Observe both the app appearance (theme toggle) and system appearance changes.
-        NSApp.publisher(for: \.effectiveAppearance)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateStatusButtonAppearance() }
-            .store(in: &cancellables)
-
-        DistributedNotificationCenter.default()
-            .publisher(for: Notification.Name("AppleInterfaceThemeChangedNotification"))
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateStatusButtonAppearance() }
-            .store(in: &cancellables)
-
         NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -244,18 +232,13 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
-        // Read macOS system dark/light mode directly from NSGlobalDomain —
-        // unaffected by NSApp.appearance overrides set by the app theme picker.
-        let isDark = UserDefaults(suiteName: "NSGlobalDomain")?
-            .string(forKey: "AppleInterfaceStyle") == "Dark"
-        let iconColor: NSColor = isDark ? .white : .black
-
+        // isTemplate=true + no contentTintColor: the system renders the icon in the
+        // correct colour for the menu bar automatically (white on dark, black on light),
+        // matching every other status-bar item — no manual dark-mode detection needed.
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
         image?.isTemplate = true
         button.image = image
-        button.contentTintColor = iconColor
-
-        let textColor: NSColor = isDark ? .white : .black
+        button.contentTintColor = nil
 
         var suffix: [String] = []
         if showCost {
@@ -269,9 +252,11 @@ final class ClauxStatusItemController: NSObject {
         if suffix.isEmpty {
             button.title = ""
         } else {
+            // NSColor.labelColor is a live dynamic colour — resolves white on dark menu
+            // bar and dark-grey on light menu bar at draw time, no appearance observers needed.
             button.attributedTitle = NSAttributedString(
                 string: " " + suffix.joined(separator: " "),
-                attributes: [.foregroundColor: textColor]
+                attributes: [.foregroundColor: NSColor.labelColor]
             )
         }
         button.toolTip = isActive ? "Claux (active session)" : "Claux"

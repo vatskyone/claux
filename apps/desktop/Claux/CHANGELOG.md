@@ -2,6 +2,11 @@
 
 ---
 
+## [1.16.2] — 2026-06-12
+
+### Bug Fixes
+- **Menu bar icon and badge text now correctly adapt to dark/light menu bar** (`ClauxApp.swift`) — the status-bar button's template image was being overridden by explicit `contentTintColor` values whose dark-mode detection was unreliable. The fix uses `isTemplate = true` with `contentTintColor = nil`, which lets the system render the icon in the correct colour for the actual menu bar context (white on dark, black on light). Badge text now uses `NSColor.labelColor`, a live dynamic colour that resolves correctly at draw time regardless of the in-app theme setting. Manual dark-mode detection and related appearance observers have been removed in favour of this native rendering approach.
+
 ## [1.16.1] — 2026-06-12
 
 ### Bug Fixes

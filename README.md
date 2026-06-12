@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/swift-5.9-orange?style=flat-square&logo=swift" />
   <img src="https://img.shields.io/badge/rust-1.78%2B-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/no%20backend-local%20only-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/desktop-v1.16.1-informational?style=flat-square" />
+  <img src="https://img.shields.io/badge/desktop-v1.16.2-informational?style=flat-square" />
   <img src="https://img.shields.io/badge/cli-v0.7.8-informational?style=flat-square" />
 </p>
 
@@ -34,7 +34,7 @@ Claux ships as two independent tools:
 |---|---|---|
 | **Runtime** | Native macOS menu bar app (Swift/SwiftUI) | Terminal TUI + subcommands (Rust) |
 | **Primary use** | Passive monitoring, alerts, quick glance | Deep analysis, export, automation, scripting |
-| **Version** | 1.16.1 | 0.7.8 |
+| **Version** | 1.16.2 | 0.7.8 |
 
 ---
 
