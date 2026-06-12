@@ -156,11 +156,16 @@ final class ClauxStatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
+        // Observe both the app appearance (theme toggle) and system appearance changes.
         NSApp.publisher(for: \.effectiveAppearance)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateStatusButtonAppearance()
-            }
+            .sink { [weak self] _ in self?.updateStatusButtonAppearance() }
+            .store(in: &cancellables)
+
+        DistributedNotificationCenter.default()
+            .publisher(for: Notification.Name("AppleInterfaceThemeChangedNotification"))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusButtonAppearance() }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)
@@ -239,11 +244,10 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
-        // Derive foreground color from the app's effective appearance, which
-        // AppThemeModifier controls via NSApp.appearance (light / dark / auto).
-        // Explicit colors are used so the icon and text always match the app theme
-        // rather than the system menu bar context.
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // Read the button's own effectiveAppearance — the menu bar has its own
+        // dark/light state independent of the app. This is the only reliable
+        // way to know whether the menu bar background is dark or light.
+        let isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let fgColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
 
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
