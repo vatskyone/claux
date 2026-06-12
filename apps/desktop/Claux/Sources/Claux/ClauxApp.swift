@@ -239,11 +239,17 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
-        // isTemplate = true lets macOS automatically invert the icon for dark/light menu bars.
+        // Derive foreground color from the app's effective appearance, which
+        // AppThemeModifier controls via NSApp.appearance (light / dark / auto).
+        // Explicit colors are used so the icon and text always match the app theme
+        // rather than the system menu bar context.
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let fgColor: NSColor = isActive ? .systemGreen : (isDark ? .white : .black)
+
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
         image?.isTemplate = true
         button.image = image
-        button.contentTintColor = isActive ? .systemGreen : nil
+        button.contentTintColor = fgColor
 
         var suffix: [String] = []
         if showCost {
@@ -257,12 +263,9 @@ final class ClauxStatusItemController: NSObject {
         if suffix.isEmpty {
             button.title = ""
         } else {
-            // Use attributedTitle with an explicit dynamic color so the text adapts
-            // to dark/light menu bar appearance instead of always rendering black.
-            let textColor: NSColor = isActive ? .systemGreen : .labelColor
             button.attributedTitle = NSAttributedString(
                 string: " " + suffix.joined(separator: " "),
-                attributes: [.foregroundColor: textColor]
+                attributes: [.foregroundColor: fgColor]
             )
         }
         button.toolTip = isActive ? "Claux (active session)" : "Claux"
