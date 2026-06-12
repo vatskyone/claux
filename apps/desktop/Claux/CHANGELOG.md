@@ -2,6 +2,11 @@
 
 ---
 
+## [1.16.1] — 2026-06-12
+
+### Bug Fixes
+- **Menu bar icon and text now visible in dark mode** (`ClauxApp.swift`) — the status item image was using `isTemplate = false`, which locked the icon to its original black rendering regardless of menu bar appearance. Switched to `isTemplate = true` so macOS automatically renders it white on dark menu bars and black on light ones. `contentTintColor` for the inactive state is now `nil` (fully automatic) instead of the forced `.labelColor`; the green tint for active sessions is preserved.
+
 ## [1.16.0] — 2026-06-10
 
 ### New Features

@@ -233,9 +233,9 @@ final class ClauxStatusItemController: NSObject {
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
-        image?.isTemplate = false
+        image?.isTemplate = true
         button.image = image
-        button.contentTintColor = isActive ? .systemGreen : .labelColor
+        button.contentTintColor = isActive ? .systemGreen : nil
 
         var suffix: [String] = []
         if showCost {
