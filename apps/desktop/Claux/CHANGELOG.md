@@ -2,6 +2,11 @@
 
 ---
 
+## [1.16.3] — 2026-06-12
+
+### New Features
+- **Multi-session switcher** (`AppStore.swift`, `Views/PopoverView.swift`) — when multiple Claude Code sessions are running simultaneously, the "Live" status label in the header becomes a tappable dropdown menu listing all active sessions. Each row shows the project folder name, current cost, and context window usage. Selecting a session switches the dashboard card to that session. The header label updates to "N Live" to indicate the session count. Single-session behaviour is unchanged.
+
 ## [1.16.2] — 2026-06-12
 
 ### Bug Fixes

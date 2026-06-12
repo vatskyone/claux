@@ -7,6 +7,7 @@ final class AppStore: ObservableObject {
 
     // MARK: – Published data
     @Published var activeSession:    ClaudeSession?   = nil
+    @Published var activeSessions:   [ClaudeSession]  = []
     @Published var recentSessions:   [ClaudeSession]  = []
     @Published var spendSummary:     SpendSummary     = .zero
     @Published var dailySpend:       [DailySpend]     = []
@@ -80,12 +81,18 @@ final class AppStore: ObservableObject {
     }
 
     /// Clear in-memory session and usage data without touching settings.
+    func focusSession(_ session: ClaudeSession) {
+        guard activeSessions.contains(where: { $0.id == session.id }) else { return }
+        activeSession = session
+    }
+
     func eraseSessionData() {
         let trackingKeys: [String] = [
             "notificationSnoozedDayKey", "weeklyRecapLastSentWeekKey",
         ]
         trackingKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         activeSession    = nil
+        activeSessions   = []
         recentSessions   = []
         spendSummary     = .zero
         dailySpend       = []
@@ -250,9 +257,16 @@ final class AppStore: ObservableObject {
             return Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? .distantPast
         }()
 
-        let visible = sessions.filter { $0.startTime >= cutoff || $0.isActive }
+        let visible    = sessions.filter { $0.startTime >= cutoff || $0.isActive }
+        let allActive  = visible.filter(\.isActive)
 
-        activeSession  = visible.first(where: \.isActive)
+        activeSessions = allActive
+        // Keep the currently focused session if it's still active; otherwise default to the first.
+        if let current = activeSession, allActive.contains(where: { $0.id == current.id }) {
+            activeSession = allActive.first(where: { $0.id == current.id })
+        } else {
+            activeSession = allActive.first
+        }
         recentSessions = visible.filter { !$0.isActive }.prefix(50).map { $0 }
         spendSummary   = computeSpend(from: visible)
         dailySpend     = computeDailySpend(from: visible)

@@ -110,6 +110,12 @@ struct PopoverView: View {
         }
     }
 
+    private var statusLabel: String {
+        let count = store.activeSessions.count
+        if count > 1 { return "\(count) Live" }
+        return store.activeSession != nil ? "Live" : "Idle"
+    }
+
     // MARK: – Tab content router
 
     @ViewBuilder
@@ -200,16 +206,44 @@ struct PopoverView: View {
     // MARK: – Header
     private var header: some View {
         ZStack {
-            // Center: Live / Idle status
-            HStack(spacing: 5) {
-                ActiveDot(isActive: store.activeSession != nil)
-                Text(store.activeSession != nil ? "Live" : "Idle")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(
-                        store.activeSession != nil
-                            ? Color.clauxBlue
-                            : Color(nsColor: .secondaryLabelColor)
-                    )
+            // Center: Live / Idle status — becomes a session-picker Menu when >1 session active
+            if store.activeSessions.count > 1 {
+                Menu {
+                    ForEach(store.activeSessions) { session in
+                        Button {
+                            store.focusSession(session)
+                        } label: {
+                            let name = URL(fileURLWithPath: session.projectPath).lastPathComponent
+                            let cost = Format.cost(session.totalCost)
+                            let ctx  = Int(session.contextHealthFraction * 100)
+                            if session.id == store.activeSession?.id {
+                                Label("\(name)  ·  \(cost)  ·  \(ctx)% ctx", systemImage: "checkmark")
+                            } else {
+                                Text("\(name)  ·  \(cost)  ·  \(ctx)% ctx")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        ActiveDot(isActive: true)
+                        Text(statusLabel)
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .foregroundStyle(Color.clauxBlue)
+                .fixedSize()
+            } else {
+                HStack(spacing: 5) {
+                    ActiveDot(isActive: store.activeSession != nil)
+                    Text(statusLabel)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(
+                            store.activeSession != nil
+                                ? Color.clauxBlue
+                                : Color(nsColor: .secondaryLabelColor)
+                        )
+                }
             }
 
             // Left: title
