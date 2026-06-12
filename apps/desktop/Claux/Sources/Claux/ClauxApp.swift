@@ -244,7 +244,7 @@ final class ClauxStatusItemController: NSObject {
         let img = NSImage(size: NSSize(width: pt, height: pt), flipped: false) { rect in
             circleColor.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
-            let font = NSFont.systemFont(ofSize: pt * 0.57, weight: .semibold)
+            let font = NSFont.systemFont(ofSize: pt * 0.72, weight: .semibold)
             let s = NSAttributedString(string: "c", attributes: [
                 .font: font,
                 .foregroundColor: letterColor
