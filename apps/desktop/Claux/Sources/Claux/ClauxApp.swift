@@ -237,20 +237,24 @@ final class ClauxStatusItemController: NSObject {
         statusItem = nil
     }
 
-    private func makeMenuBarImage(isDark: Bool, isActive: Bool) -> NSImage {
+    private func makeMenuBarImage(isDark: Bool) -> NSImage {
         let pt: CGFloat = 17
         let circleColor: NSColor = isDark ? .white : .black
         let letterColor: NSColor = isDark ? .black : .white
         let img = NSImage(size: NSSize(width: pt, height: pt), flipped: false) { rect in
             circleColor.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
-            let font = NSFont.systemFont(ofSize: pt * 0.72, weight: .semibold)
+            let font = NSFont.systemFont(ofSize: pt * 0.80, weight: .semibold)
             let s = NSAttributedString(string: "c", attributes: [
                 .font: font,
                 .foregroundColor: letterColor
             ])
             let sz = s.size()
-            s.draw(at: NSPoint(x: (pt - sz.width) / 2, y: (pt - sz.height) / 2 + 0.5))
+            // Use capHeight (not bounding box height) so the visible letter
+            // is visually centred in the circle rather than sitting low.
+            let x = (pt - sz.width) / 2
+            let y = (pt - font.capHeight) / 2
+            s.draw(at: NSPoint(x: x, y: y))
             return true
         }
         img.isTemplate = false
@@ -268,7 +272,7 @@ final class ClauxStatusItemController: NSObject {
         // which is independent of the app's theme setting.
         let isDark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
-        button.image = makeMenuBarImage(isDark: isDark, isActive: isActive)
+        button.image = makeMenuBarImage(isDark: isDark)
         button.contentTintColor = nil
 
         let textColor: NSColor = isDark ? .white : .black
