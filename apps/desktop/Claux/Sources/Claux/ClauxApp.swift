@@ -156,6 +156,13 @@ final class ClauxStatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
+        NSApp.publisher(for: \.effectiveAppearance)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateStatusButtonAppearance()
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .clauxOpenDailyRecap)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -232,6 +239,7 @@ final class ClauxStatusItemController: NSObject {
         let showCost = (UserDefaults.standard.object(forKey: "showCostInMenuBar") as? Bool) ?? false
         let showModel = (UserDefaults.standard.object(forKey: "showModelInMenuBar") as? Bool) ?? false
 
+        // isTemplate = true lets macOS automatically invert the icon for dark/light menu bars.
         let image = NSImage(systemSymbolName: "c.circle.fill", accessibilityDescription: "Claux")
         image?.isTemplate = true
         button.image = image
@@ -245,7 +253,18 @@ final class ClauxStatusItemController: NSObject {
         if showModel, let model = store.activeSession?.model {
             suffix.append(ModelInfo.shortName(model))
         }
-        button.title = suffix.isEmpty ? "" : " " + suffix.joined(separator: " ")
+
+        if suffix.isEmpty {
+            button.title = ""
+        } else {
+            // Use attributedTitle with an explicit dynamic color so the text adapts
+            // to dark/light menu bar appearance instead of always rendering black.
+            let textColor: NSColor = isActive ? .systemGreen : .labelColor
+            button.attributedTitle = NSAttributedString(
+                string: " " + suffix.joined(separator: " "),
+                attributes: [.foregroundColor: textColor]
+            )
+        }
         button.toolTip = isActive ? "Claux (active session)" : "Claux"
     }
 
